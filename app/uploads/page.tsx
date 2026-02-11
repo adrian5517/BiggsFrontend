@@ -16,6 +16,7 @@ import {
   AlertCircle,
   X,
 } from 'lucide-react'
+import { showSuccess, showError } from '@/utils/swal'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -61,11 +62,14 @@ export default function UploadsPage() {
         setResult({ ok: true, jobId: data.jobId })
         setFiles([])
         if (fileInputRef.current) fileInputRef.current.value = ''
+        showSuccess('Upload Successful', `Job ID: ${data.jobId}`)
       } else {
         setResult({ ok: false, error: data.message || 'Upload failed' })
+        showError('Upload Failed', data.message || 'Something went wrong.')
       }
     } catch {
       setResult({ ok: false, error: 'Network error' })
+      showError('Network Error', 'Could not reach the server.')
     } finally {
       setUploading(false)
     }

@@ -1,6 +1,6 @@
 'use client'
 
-import React from "react"
+import React from 'react'
 
 export default function LoginLayout({
   children,
@@ -8,40 +8,36 @@ export default function LoginLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-white">
-      {/* Diagonal Stripe Background - Top Left */}
-      <div className="absolute inset-0 -z-10">
+    <div className="relative min-h-screen overflow-hidden bg-background">
+      {/* Diagonal stripes - top left corner */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
         <svg
           className="absolute inset-0 h-full w-full"
           preserveAspectRatio="none"
           viewBox="0 0 1440 900"
         >
-          {/* Blue diagonal stripe */}
           <polygon
-            points="0,0 300,0 100,300 0,150"
-            fill="#0084D4"
-            opacity="0.95"
+            points="0,0 250,0 50,300 0,120"
+            fill="hsl(200 100% 41%)"
+            opacity="0.92"
           />
-          {/* Yellow diagonal stripe */}
           <polygon
-            points="150,0 500,0 200,350 0,200"
-            fill="#F5D547"
-            opacity="0.95"
+            points="100,0 420,0 150,350 0,180"
+            fill="hsl(45 100% 62%)"
+            opacity="0.92"
           />
-          {/* Red diagonal stripe */}
           <polygon
-            points="350,0 700,0 350,350 100,350"
-            fill="#C83C3C"
-            opacity="0.95"
+            points="280,0 600,0 280,380 60,300"
+            fill="hsl(0 70% 50%)"
+            opacity="0.92"
           />
         </svg>
       </div>
 
-      {/* Dark border frame */}
-      <div className="absolute inset-0 -z-10 border-8 border-primary/80" />
-
-      {/* Main content */}
-      {children}
+      {/* Content */}
+      <div className="relative z-10">
+        {children}
+      </div>
     </div>
   )
 }

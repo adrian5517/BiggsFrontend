@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { AppSidebar } from '@/components/app-sidebar'
-import { TopBar } from '@/components/top-bar'
+import { DashboardNavbar } from '@/components/dashboard-navbar'
+import { DashboardDecorations } from '@/components/dashboard-decorations'
 import { getAccessToken } from '@/utils/auth'
 
 interface DashboardShellProps {
@@ -13,7 +13,6 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children, title }: DashboardShellProps) {
   const router = useRouter()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     const token = getAccessToken()
@@ -21,32 +20,34 @@ export function DashboardShell({ children, title }: DashboardShellProps) {
   }, [router])
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+    <div className="relative flex min-h-screen flex-col bg-background">
+      <DashboardDecorations />
+      <DashboardNavbar />
 
-      {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 lg:relative lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <AppSidebar />
+      {/* Page header */}
+      <div className="border-b border-border bg-card/50">
+        <div className="mx-auto max-w-7xl px-4 py-4 lg:px-6">
+          <h1 className="text-xl font-bold text-foreground">{title}</h1>
+        </div>
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar title={title} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          {children}
-        </main>
-      </div>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 lg:px-6">
+        {children}
+      </main>
+
+      {/* Footer accent */}
+      <footer className="mt-auto">
+        <div className="flex h-1">
+          <div className="flex-1 bg-[hsl(var(--biggs-blue))]" />
+          <div className="flex-1 bg-[hsl(var(--biggs-gold))]" />
+        </div>
+        <div className="border-t border-border bg-card/50 px-4 py-3">
+          <p className="text-center text-xs text-muted-foreground">
+            BIGGS Data Operations Pipeline
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Play, RotateCcw, Copy } from 'lucide-react'
 import { fetchWithAuth } from '@/utils/auth'
 import { useJobStatus } from '@/hooks/use-job-status'
+import { Toast, showError } from '@/utils/swal'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -30,13 +31,17 @@ export function DashboardQuickFetch() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        showError('Fetch Failed', 'Could not start the fetch job.')
+        return
+      }
       const data = await res.json()
       if (data.jobId) {
         job.startJob(data.jobId)
+        Toast.fire({ icon: 'success', title: `Job started: ${data.jobId.slice(0, 8)}...` })
       }
     } catch {
-      // error handled by job status
+      showError('Network Error', 'Could not reach the server.')
     }
   }
 

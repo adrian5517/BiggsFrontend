@@ -3,55 +3,65 @@
 export default function GeometricDecorations() {
   return (
     <>
-      {/* Top Right Squares */}
-      <div className="absolute right-4 top-8 space-y-3 sm:right-8 sm:top-12">
-        <div className="flex gap-3">
-          <div className="h-10 w-10 bg-secondary sm:h-12 sm:w-12" />
-          <div className="h-10 w-10 bg-secondary sm:h-12 sm:w-12" />
-          <div className="h-10 w-10 bg-secondary sm:h-12 sm:w-12" />
+      {/* Top-right sky-blue pixel blocks */}
+      <div className="absolute right-8 top-8 hidden sm:block" aria-hidden="true">
+        <div className="flex gap-2">
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
         </div>
-        <div className="flex gap-3 pl-6">
-          <div className="h-10 w-10 bg-secondary sm:h-12 sm:w-12" />
-          <div className="h-10 w-10 bg-secondary sm:h-12 sm:w-12" />
+        <div className="mt-2 flex gap-2 pl-6">
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+        </div>
+        <div className="mt-2 flex gap-2 pl-12">
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-10 w-10 bg-[hsl(var(--biggs-blue))]" />
         </div>
       </div>
 
-      {/* Right Side Mixed Squares */}
-      <div className="absolute bottom-40 right-4 space-y-2 sm:right-8">
+      {/* Right-middle mixed pixel blocks */}
+      <div className="absolute right-6 top-1/2 -translate-y-1/2 hidden sm:block" aria-hidden="true">
         <div className="flex gap-2">
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-blue))]" />
         </div>
-        <div className="flex gap-2">
-          <div className="h-8 w-8 bg-accent sm:h-10 sm:w-10" />
-          <div className="h-8 w-8 bg-red-500 sm:h-10 sm:w-10" />
+        <div className="mt-2 flex gap-2">
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-gold))]" />
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-red))]" />
         </div>
-        <div className="flex gap-2">
-          <div className="h-8 w-8 bg-red-500 sm:h-10 sm:w-10" />
+        <div className="mt-2 flex gap-2 pl-4">
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-red))]" />
         </div>
-        <div className="flex gap-2">
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
-          <div className="h-8 w-8 bg-accent sm:h-10 sm:w-10" />
+        <div className="mt-2 flex gap-2">
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-8 w-8 bg-[hsl(var(--biggs-gold))]" />
         </div>
       </div>
 
-      {/* Left Side Squares */}
-      <div className="absolute bottom-32 left-4 space-y-2 sm:left-8">
+      {/* Bottom-left sky-blue pixel blocks */}
+      <div className="absolute bottom-32 left-6 hidden sm:block" aria-hidden="true">
         <div className="flex gap-2">
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
         </div>
-        <div className="flex gap-2 pl-4">
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
-          <div className="h-8 w-8 bg-secondary sm:h-10 sm:w-10" />
+        <div className="mt-2 flex gap-2 pl-5">
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
+          <div className="h-9 w-9 bg-[hsl(var(--biggs-blue))]" />
         </div>
       </div>
 
-      {/* Bottom Right Large Circles */}
-      <div className="absolute -bottom-20 -right-5 h-64 w-64 rounded-full bg-accent " />
-      <div className="absolute -bottom-5 -right-12 h-48 w-48 rounded-full bg-secondary " />
-      
-      <div className="absolute -bottom-8 right-12 h-40 w-40 rounded-full bg-red-500" />
+      {/* Bottom-right overlapping circles */}
+      <div className="absolute -bottom-16 -right-8" aria-hidden="true">
+        <div className="relative h-56 w-56 sm:h-72 sm:w-72">
+          <div className="absolute bottom-0 left-0 h-44 w-44 rounded-full bg-[hsl(var(--biggs-gold))] sm:h-56 sm:w-56" />
+          <div className="absolute bottom-4 right-0 h-36 w-36 rounded-full bg-[hsl(var(--biggs-blue))] sm:h-44 sm:w-44" />
+          <div className="absolute bottom-8 right-8 h-28 w-28 rounded-full bg-[hsl(var(--biggs-red))] sm:h-36 sm:w-36" />
+        </div>
+      </div>
     </>
   )
 }
