@@ -1,5 +1,5 @@
 // Client-side auth utilities: token storage and authenticated fetch with refresh
-const BASE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+const BASE_API = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
 export function setAccessToken(token: string | null) {
   try {

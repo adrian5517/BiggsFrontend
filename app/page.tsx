@@ -19,6 +19,8 @@ export default function LoginPage() {
   const [passwordValue, setPasswordValue] = useState('')
   const [error, setError] = useState('')
 
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,8 +34,7 @@ export default function LoginPage() {
 
     setIsLoading(true)
     try {
-      // Adjust backend URL if different in your environment
-      const res = await fetch('http://localhost:3000/api/auth/login', {
+      const res = await fetch(`${apiBaseUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // important: allow server to set HttpOnly refresh cookie
