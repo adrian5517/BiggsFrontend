@@ -10,7 +10,7 @@ const _geistMono = Geist_Mono({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'BIGGS Admin - Secure Access',
   description: 'Admin login for BIGGS management system',
-  generator: 'v0.app',
+  
 }
 
 export const viewport: Viewport = {
