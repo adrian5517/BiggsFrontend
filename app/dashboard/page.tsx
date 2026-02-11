@@ -1,172 +1,108 @@
-"use client"
+'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import auth, { fetchWithAuth, getAccessToken } from '@/utils/auth'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import LoginLayout from '@/components/login-layout'
-import GeometricDecorations from '@/components/geometric-decorations'
+import React from 'react'
 import Link from 'next/link'
+import { DashboardShell } from '@/components/dashboard-shell'
+import { DashboardQuickFetch } from '@/components/dashboard-quick-fetch'
+import { LiveEventsPanel } from '@/components/live-events-panel'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import {
+  Upload,
+  FolderOpen,
+  FileSpreadsheet,
+  ArrowRight,
+  Activity,
+  Database,
+  Zap,
+} from 'lucide-react'
 
-type FetchEvent = { type: string; message?: string; batchRows?: number; totalRows?: number }
+const quickActions = [
+  { href: '/uploads', label: 'Upload CSVs', description: 'Upload POS files and enqueue jobs', icon: Upload },
+  { href: '/files', label: 'Browse Files', description: 'View stored uploads and status', icon: FolderOpen },
+  { href: '/master', label: 'Masterfile', description: 'Preview and download exports', icon: FileSpreadsheet },
+]
+
+const stats = [
+  { label: 'Pipeline', value: 'Active', icon: Activity, color: 'text-green-500' },
+  { label: 'Queue', value: 'Ready', icon: Zap, color: 'text-primary' },
+  { label: 'Database', value: 'Connected', icon: Database, color: 'text-primary' },
+]
 
 export default function DashboardPage() {
-  const router = useRouter()
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-
-  const [query, setQuery] = useState('')
-  const [branch, setBranch] = useState('')
-  const [pos, setPos] = useState('')
-  const [events, setEvents] = useState<FetchEvent[]>([])
-  const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle')
-  const [jobId, setJobId] = useState('')
-  const eventSourceRef = useRef<EventSource | null>(null)
-
-  useEffect(() => {
-    const token = auth.getAccessToken()
-    if (!token) router.push('/')
-  }, [router])
-
-  useEffect(() => () => { if (eventSourceRef.current) eventSourceRef.current.close() }, [])
-
-  const startFetch = async () => {
-    setStatus('running')
-    setEvents([])
-    const payload = { start: new Date().toISOString().slice(0,10), end: new Date().toISOString().slice(0,10), branches: branch || undefined, positions: pos || undefined }
-    try {
-      const res = await fetchWithAuth(`${apiBaseUrl}/api/fetch/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      if (res.status === 401) { auth.clearAccessToken(); router.push('/'); return }
-      const data = await res.json()
-      if (!res.ok) { setStatus('error'); return }
-      setJobId(data.jobId || '')
-      connectToStream(data.jobId || '')
-    } catch (e) { setStatus('error') }
-  }
-
-  const connectToStream = (id: string) => {
-    if (!id) return
-    if (eventSourceRef.current) eventSourceRef.current.close()
-    const token = getAccessToken()
-    const url = `${apiBaseUrl}/api/fetch/status/stream?jobId=${encodeURIComponent(id)}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-    const es = new EventSource(url)
-    eventSourceRef.current = es
-    es.onmessage = (ev) => {
-      try {
-        const d = JSON.parse(ev.data)
-        setEvents(prev => [d, ...prev].slice(0, 150))
-        if (d.type === 'complete') { setStatus('completed'); es.close() }
-      } catch {
-        setEvents(prev => [{ type: 'message', message: ev.data }, ...prev].slice(0, 150))
-      }
-    }
-    es.onerror = () => { setStatus('error'); es.close() }
-  }
-
-  const openSse = () => {
-    const token = getAccessToken()
-    const url = `${apiBaseUrl}/api/queue/events?queue=importQueue${token ? `&token=${encodeURIComponent(token)}` : ''}`
-    window.open(url, '_blank')
-  }
-
   return (
-    <LoginLayout>
-      <GeometricDecorations />
-      <div className="min-h-screen px-6 py-8">
-        <nav className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">BIGGS Dashboard</h1>
-            <Link href="/dashboard" className="text-sm text-muted-foreground">Dashboard</Link>
-            <Link href="/files" className="text-sm text-muted-foreground">Files</Link>
-            <Link href="/master" className="text-sm text-muted-foreground">Master</Link>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={openSse}>Open Queue Events (SSE)</Button>
-            <Button onClick={() => router.push('/upload')}>Upload CSVs</Button>
-          </div>
-        </nav>
+    <DashboardShell title="Dashboard">
+      {/* Status row */}
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {stats.map(({ label, value, icon: Icon, color }) => (
+          <Card key={label}>
+            <CardContent className="flex items-center gap-3 py-3 px-4">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-muted ${color}`}>
+                <Icon className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="text-sm font-medium text-foreground">{value}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Quick Fetch</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <Label>Search</Label>
-                    <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search product, txn, OR" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Main content */}
+        <div className="flex flex-col gap-6 lg:col-span-2">
+          <DashboardQuickFetch />
+          <LiveEventsPanel />
+        </div>
+
+        {/* Sidebar quick actions */}
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {quickActions.map(({ href, label, description, icon: Icon }) => (
+                <Link key={href} href={href}>
+                  <div className="group flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{label}</p>
+                      <p className="truncate text-xs text-muted-foreground">{description}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
-                  <div>
-                    <Label>Branch (optional)</Label>
-                    <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="e.g. BETA" />
-                  </div>
-                  <div>
-                    <Label>POS</Label>
-                    <Input value={pos} onChange={(e) => setPos(e.target.value)} placeholder="1" />
-                  </div>
-                </div>
-                <div className="mt-4 flex items-center gap-3">
-                  <Button onClick={startFetch} className="bg-amber-500">{status === 'running' ? 'Streaming...' : 'Start Fetch'}</Button>
-                  <Button variant="outline" onClick={() => { setQuery(''); setBranch(''); setPos('') }}>Reset</Button>
-                  <div className="ml-auto text-sm">Job: <span className="font-mono">{jobId || '—'}</span></div>
-                </div>
-              </CardContent>
-            </Card>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Live Events</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-80 overflow-auto space-y-2">
-                  {events.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No events yet.</div>
-                  ) : (
-                    events.map((ev, i) => (
-                      <div key={i} className="p-3 rounded border">
-                        <div className="text-xs font-semibold text-amber-700">{ev.type}</div>
-                        {ev.message && <div className="text-sm">{ev.message}</div>}
-                        {(ev.batchRows || ev.totalRows) && (
-                          <div className="text-xs text-muted-foreground">Batch: {ev.batchRows || 0} • Total: {ev.totalRows || 0}</div>
-                        )}
-                      </div>
-                    ))
-                  )}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Keyboard Shortcuts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Start Fetch</span>
+                  <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Ctrl+Enter</kbd>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <aside className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Filters & Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button onClick={() => router.push('/reports')} variant="ghost">View Reports</Button>
-                <Button onClick={() => router.push('/files')} variant="ghost">Browse Files</Button>
-                <Button onClick={() => router.push('/master')} variant="ghost">Download Master</Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Shortcuts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="text-sm space-y-2">
-                  <li>• Upload CSVs → <Link href="/upload" className="text-amber-600">Upload</Link></li>
-                  <li>• Monitor queue → <Button variant="link" onClick={openSse}>Open SSE</Button></li>
-                </ul>
-              </CardContent>
-            </Card>
-          </aside>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Upload Files</span>
+                  <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Ctrl+U</kbd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">View Master</span>
+                  <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Ctrl+M</kbd>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </LoginLayout>
+    </DashboardShell>
   )
 }
