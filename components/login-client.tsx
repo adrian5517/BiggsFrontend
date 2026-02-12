@@ -61,7 +61,7 @@ export default function LoginClient() {
   return (
     <LoginLayout>
       <section className="relative bg-white">
-        <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="pointer-events-none absolute inset-0 -z-20">
           <svg className="w-full h-full" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" aria-hidden>
             <defs>
               <linearGradient id="g1" x1="0" x2="1">
@@ -87,7 +87,7 @@ export default function LoginClient() {
             <img className="w-20 h-auto" src="/images/logo.png" alt="BIGGS logo" />
           </div>
 
-          <div className="w-full bg-card rounded-lg shadow sm:max-w-md xl:p-0">
+          <div className="w-full bg-transparent rounded-lg shadow sm:max-w-md xl:p-0 border border-white/10">
             <div className="p-6 space-y-4 sm:p-8">
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-card-foreground">Sign in to your account</h1>
 

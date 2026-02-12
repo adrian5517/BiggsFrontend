@@ -116,8 +116,15 @@ export async function login(identifier: string, password: string) {
 
 export async function logout() {
   try {
-    await fetch(`${BASE_API}/api/auth/logout`, { method: 'POST', credentials: 'include' })
-  } catch (e) {}
+    // Use fetchWithAuth so we send current access token and attempt refresh if needed.
+    const res = await fetchWithAuth(`${BASE_API}/api/auth/logout`, { method: 'POST', credentials: 'include' })
+    // If server returns 401 (already logged out / invalid refresh), just proceed to clear client state.
+    if (res.status === 401) {
+      // nothing special, fallthrough to clear token
+    }
+  } catch (e) {
+    // ignore network errors
+  }
   clearAccessToken()
 }
 
