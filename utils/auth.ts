@@ -24,7 +24,15 @@ export function getAccessToken(): string | null {
 }
 
 export function clearAccessToken() {
-  try { localStorage.removeItem('accessToken') } catch (e) {}
+  try {
+    // use setAccessToken to ensure auth events are emitted
+    setAccessToken(null)
+    localStorage.removeItem('user')
+  } catch (e) {}
+}
+
+export function getUser() {
+  try { const s = localStorage.getItem('user'); return s ? JSON.parse(s) : null } catch (e) { return null }
 }
 
 function emitAuthEvent(name: string, detail?: any) {

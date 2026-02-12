@@ -1,47 +1,35 @@
 'use client'
 
 import React from "react"
-
-export default function LoginLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function LoginLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-white">
-      {/* Diagonal Stripe Background - Top Left */}
       <div className="absolute inset-0 -z-10">
-        <svg
-          className="absolute inset-0 h-full w-full"
-          preserveAspectRatio="none"
-          viewBox="0 0 1440 900"
-        >
-          {/* Blue diagonal stripe */}
-          <polygon
-            points="0,0 300,0 100,300 0,150"
-            fill="#0084D4"
-            opacity="0.95"
-          />
-          {/* Yellow diagonal stripe */}
-          <polygon
-            points="150,0 500,0 200,350 0,200"
-            fill="#F5D547"
-            opacity="0.95"
-          />
-          {/* Red diagonal stripe */}
-          <polygon
-            points="350,0 700,0 350,350 100,350"
-            fill="#C83C3C"
-            opacity="0.95"
-          />
+        <svg className="absolute left-0 top-0 h-80 w-80" viewBox="0 0 200 200" preserveAspectRatio="none">
+          <rect x="0" y="0" width="200" height="60" fill="hsl(var(--accent))" />
+          <rect x="0" y="60" width="200" height="40" transform="skewX(-18)" fill="hsl(var(--destructive))" />
+        </svg>
+
+        <svg className="absolute right-0 top-12 h-48 w-48" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <g>
+            <rect x="0" y="0" width="22" height="22" fill="hsl(var(--primary))" />
+            <rect x="26" y="0" width="22" height="22" fill="hsl(var(--primary))" />
+            <rect x="52" y="0" width="22" height="22" fill="hsl(var(--accent))" />
+            <rect x="78" y="0" width="22" height="22" fill="hsl(var(--destructive))" />
+          </g>
+        </svg>
+
+        <svg className="absolute right-0 bottom-0 h-48 w-48" viewBox="0 0 200 200" preserveAspectRatio="none">
+          <circle cx="50" cy="150" r="40" fill="hsl(var(--primary))" opacity="0.95" />
+          <circle cx="120" cy="160" r="30" fill="hsl(var(--accent))" opacity="0.95" />
+          <circle cx="165" cy="140" r="24" fill="hsl(var(--destructive))" opacity="0.95" />
         </svg>
       </div>
 
-      {/* Dark border frame */}
-      <div className="absolute inset-0 -z-10 border-8 border-primary/80" />
-
-      {/* Main content */}
-      {children}
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
+        <div className="w-full max-w-3xl">{children}</div>
+      </div>
     </div>
   )
 }
+

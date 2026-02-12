@@ -240,7 +240,9 @@ const ChartTooltipContent = React.forwardRef<
                       </div>
                       {item.value && (
                         <span className="font-mono font-medium tabular-nums text-foreground">
-                          {item.value.toLocaleString()}
+                          {typeof Intl !== 'undefined'
+                            ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(item.value))
+                            : String(item.value)}
                         </span>
                       )}
                     </div>

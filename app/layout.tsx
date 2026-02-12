@@ -1,16 +1,21 @@
-import React from "react"
+import React from 'react'
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import Link from 'next/link'
+// ThemeProvider removed to avoid server/client theme class mismatches
+import { Poppins } from 'next/font/google'
 
 import './globals.css'
+import ClientShell from '@/components/client-shell'
 
-const _geist = Geist({ subsets: ['latin'] })
-const _geistMono = Geist_Mono({ subsets: ['latin'] })
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'BIGGS Admin - Secure Access',
-  description: 'Admin login for BIGGS management system',
-  
+  title: 'BIGGS Admin',
+  description: 'BIGGS operations dashboard',
 }
 
 export const viewport: Viewport = {
@@ -19,14 +24,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="font-sans antialiased">{children}</body>
+      <body className={`${poppins.className} antialiased bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100`}>
+          <ClientShell>
+            {children}
+          </ClientShell>
+      </body>
     </html>
   )
 }

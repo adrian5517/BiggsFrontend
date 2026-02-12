@@ -27,7 +27,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const token = auth.getAccessToken()
-    if (!token) router.push('/')
+    if (!token) router.push('/login')
   }, [router])
 
   useEffect(() => () => { if (eventSourceRef.current) eventSourceRef.current.close() }, [])
@@ -38,7 +38,7 @@ export default function DashboardPage() {
     const payload = { start: new Date().toISOString().slice(0,10), end: new Date().toISOString().slice(0,10), branches: branch || undefined, positions: pos || undefined }
     try {
       const res = await fetchWithAuth(`${apiBaseUrl}/api/fetch/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      if (res.status === 401) { auth.clearAccessToken(); router.push('/'); return }
+      if (res.status === 401) { auth.clearAccessToken(); router.push('/login'); return }
       const data = await res.json()
       if (!res.ok) { setStatus('error'); return }
       setJobId(data.jobId || '')
@@ -90,9 +90,9 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <Card>
+            <Card className="bg-white text-slate-900 shadow">
               <CardHeader>
-                <CardTitle>Quick Fetch</CardTitle>
+                <CardTitle className="text-2xl text-[#29a8e0]">Quick Fetch</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -110,16 +110,16 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3">
-                  <Button onClick={startFetch} className="bg-amber-500">{status === 'running' ? 'Streaming...' : 'Start Fetch'}</Button>
-                  <Button variant="outline" onClick={() => { setQuery(''); setBranch(''); setPos('') }}>Reset</Button>
+                  <Button onClick={startFetch} className="bg-[#ecbc32] text-black hover:brightness-95">{status === 'running' ? 'Streaming...' : 'Start Fetch'}</Button>
+                  <Button variant="outline" onClick={() => { setQuery(''); setBranch(''); setPos('') }} className="border-[#29a8e0] text-[#29a8e0]">Reset</Button>
                   <div className="ml-auto text-sm">Job: <span className="font-mono">{jobId || '—'}</span></div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="bg-white text-slate-900 shadow">
               <CardHeader>
-                <CardTitle>Live Events</CardTitle>
+                <CardTitle className="text-2xl text-[#29a8e0]">Live Events</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="max-h-80 overflow-auto space-y-2">
@@ -142,25 +142,25 @@ export default function DashboardPage() {
           </div>
 
           <aside className="space-y-6">
-            <Card>
+            <Card className="bg-white text-slate-900 shadow">
               <CardHeader>
-                <CardTitle>Filters & Quick Actions</CardTitle>
+                <CardTitle className="text-2xl text-[#29a8e0]">Filters & Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button onClick={() => router.push('/reports')} variant="ghost">View Reports</Button>
-                <Button onClick={() => router.push('/files')} variant="ghost">Browse Files</Button>
-                <Button onClick={() => router.push('/master')} variant="ghost">Download Master</Button>
+                <Button onClick={() => router.push('/reports')} variant="ghost" className="text-[#29a8e0]">View Reports</Button>
+                <Button onClick={() => router.push('/files')} variant="ghost" className="text-[#29a8e0]">Browse Files</Button>
+                <Button onClick={() => router.push('/master')} variant="ghost" className="text-[#29a8e0]">Download Master</Button>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="bg-white text-slate-900 shadow">
               <CardHeader>
-                <CardTitle>Shortcuts</CardTitle>
+                <CardTitle className="text-2xl text-[#29a8e0]">Shortcuts</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-2">
-                  <li>• Upload CSVs → <Link href="/upload" className="text-amber-600">Upload</Link></li>
-                  <li>• Monitor queue → <Button variant="link" onClick={openSse}>Open SSE</Button></li>
+                  <li>• Upload CSVs → <Link href="/uploads" className="text-[#ecbc32]">Upload</Link></li>
+                  <li>• Monitor queue → <Button variant="link" onClick={openSse} className="text-[#29a8e0]">Open SSE</Button></li>
                 </ul>
               </CardContent>
             </Card>
