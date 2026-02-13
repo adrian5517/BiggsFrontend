@@ -3,7 +3,7 @@
 import React from "react"
 export default function LoginLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-white">
+    <div className="relative max-h-screen overflow-hidden">
       <div className="absolute inset-0 -z-10">
         <svg className="absolute left-0 top-0 h-80 w-80" viewBox="0 0 200 200" preserveAspectRatio="none">
           <rect x="0" y="0" width="200" height="60" fill="hsl(var(--accent))" />

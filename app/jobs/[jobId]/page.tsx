@@ -1,4 +1,4 @@
-import JobStatusPanel from '../../JobStatusPanel';
+import JobStatusPanel from '../JobStatusPanel';
 
 export default function JobPage({ params }: { params: { jobId: string } }) {
   const { jobId } = params;

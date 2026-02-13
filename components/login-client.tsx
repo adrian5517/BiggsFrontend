@@ -28,15 +28,35 @@ export default function LoginClient() {
     setLoading(true)
     try {
       const res = await login(identifier, password)
+      // handle common HTTP statuses with clearer messages
       if (!res.ok) {
-        setError(res.data?.message || `Login failed (${res.status})`)
+        const serverMsg = res.data?.message || ''
+        let friendly = serverMsg || `Login failed (${res.status})`
+        if (res.status === 400) friendly = serverMsg || 'Invalid request — check your input.'
+        else if (res.status === 401) friendly = serverMsg || 'Invalid credentials. Please try again.'
+        else if (res.status === 403) friendly = serverMsg || 'Access denied. Please contact support.'
+        else if (res.status === 429) friendly = serverMsg || 'Too many attempts. Try again later.'
+        else if (res.status >= 500) friendly = serverMsg || 'Server error. Try again later.'
+        setError(friendly)
         setLoading(false)
         return
       }
-      try { if (res.data && res.data.user) localStorage.setItem('user', JSON.stringify(res.data.user)) } catch (e) {}
+
+      try {
+        if (res.data && res.data.user) localStorage.setItem('user', JSON.stringify(res.data.user))
+      } catch (e) {
+        // ignore storage errors but surface a small message if needed
+        console.warn('Failed to persist user to localStorage', e)
+      }
+
       router.push('/dashboard')
-    } catch (err) {
-      setError('Network error')
+    } catch (err: any) {
+      // network or unexpected errors
+      const msg = err?.message || String(err) || 'Network error'
+      setError(msg.includes('NetworkError') || msg.includes('Failed to fetch') ? 'Network error — check your connection' : msg)
+      setLoading(false)
+    } finally {
+      // ensure loading is cleared in all paths once navigation hasn't happened
       setLoading(false)
     }
   }
@@ -91,7 +111,9 @@ export default function LoginClient() {
             <div className="p-6 space-y-4 sm:p-8">
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-card-foreground">Sign in to your account</h1>
 
-              {error && <div className="text-sm text-destructive-foreground">{error}</div>}
+              {error && (
+                <div role="alert" aria-live="assertive" className="text-sm text-destructive-foreground">{error}</div>
+              )}
 
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div>
