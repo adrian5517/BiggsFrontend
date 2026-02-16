@@ -29,6 +29,52 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     }
   }, [])
 
+  // Disable Three.js shader error checking when Three is available (silence warnings)
+  useEffect(() => {
+    const disableOnce = () => {
+      try {
+        // @ts-ignore window global
+        const THREE = (window as any).THREE
+        if (THREE && THREE.WebGLRenderer && THREE.WebGLRenderer.prototype) {
+          THREE.WebGLRenderer.prototype.debug = THREE.WebGLRenderer.prototype.debug || {}
+          THREE.WebGLRenderer.prototype.debug.checkShaderErrors = false
+          return true
+        }
+      } catch (e) {
+        // ignore
+      }
+      return false
+    }
+
+    if (!disableOnce()) {
+      const id = setInterval(() => {
+        if (disableOnce()) clearInterval(id)
+      }, 500)
+      return () => clearInterval(id)
+    }
+  }, [])
+
+  // Suppress noisy WebGL shader warnings (from Spline/Three) shown in console
+  useEffect(() => {
+    try {
+      const origWarn = console.warn.bind(console)
+      console.warn = (...args: any[]) => {
+        try {
+          const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
+          if (msg.includes('THREE.WebGLProgram: Program Info Log') || msg.includes('loop only executes for 1 iteration')) {
+            return
+          }
+        } catch (e) {
+          // fallthrough to original warn
+        }
+        return origWarn(...args)
+      }
+      return () => { console.warn = origWarn }
+    } catch (e) {
+      // ignore
+    }
+  }, [])
+
     if (!authed) {
     // public view: just render children centered
     return <div className="min-h-screen bg-slate-50 py-12">{children}</div>

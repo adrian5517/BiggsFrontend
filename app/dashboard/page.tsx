@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import LoginLayout from '@/components/login-layout'
 import ManualFetchClient from '@/components/manual-fetch-client'
 import MissingScanClient from '@/components/missing-scan-client'
+import AdminRetentionPanel from '@/components/AdminRetentionPanel'
+import ToastProvider from '@/components/ToastProvider'
 
 import Link from 'next/link'
 
@@ -38,8 +40,9 @@ export default function DashboardPage() {
 
   return (
     <LoginLayout>
-      <div />
-      <div className="max-h-screen "> 
+      <ToastProvider>
+        <div />
+        <div className="max-h-screen "> 
         {/* Centered white content card with single internal gradient header */}
         <div className="max-w-8xl mx-auto -mt-10 relative block">
           <div className="bg-white rounded-xl shadow-lg relative block overflow-hidden">
@@ -140,10 +143,14 @@ export default function DashboardPage() {
                   </Card>
                 </motion.div>
               </div>
+              <div className="mt-6">
+                <AdminRetentionPanel />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </ToastProvider>
     </LoginLayout>
   )
 }

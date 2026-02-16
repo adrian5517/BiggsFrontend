@@ -305,7 +305,11 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
           <div className="absolute bottom-20 left-0 right-0 overflow-hidden">
             <motion.div 
               className={`flex ${collapsed ? 'flex-col items-center' : 'flex-row'} transition-all duration-300`}
-              animate={{ gap: collapsed ? 2 : 0 }}
+              // Use explicit pixel gap values and set initial style so the browser
+              // doesn't report the computed value as "normal" which Motion can't animate.
+              style={{ gap: collapsed ? 8 : 0 }}
+              animate={{ gap: collapsed ? 8 : 0 }}
+              transition={{ duration: 0.25 }}
             >
               <motion.div 
                 className={`${collapsed ? 'w-12 h-1.5 rounded-full mx-auto' : 'w-full h-2'} bg-gradient-to-r from-red-500 to-red-600 shadow-lg`}

@@ -118,5 +118,5 @@ export default function MissingScanClient() {
         </div>
       </div>
     </div>
-  );
+  ); 
 }

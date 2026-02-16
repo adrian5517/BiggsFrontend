@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
-import SplineLoader from '@/components/spline-loader'
 import { useRouter } from 'next/navigation'
 import { login } from '@/utils/auth'
 import LoginLayout from '@/components/login-layout'
@@ -61,22 +60,6 @@ export default function LoginClient() {
     }
   }
 
-  const [mounted, setMounted] = useState(false)
-  const [splineFailed, setSplineFailed] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-    const onError = (ev: ErrorEvent) => {
-      try {
-        const msg = String(ev.message || ev.error?.message || '')
-        if (msg.includes('Failed to fetch') || msg.includes('@splinetool') || msg.includes('Splinetool')) {
-          setSplineFailed(true)
-        }
-      } catch (e) {}
-    }
-    window.addEventListener('error', onError)
-    return () => window.removeEventListener('error', onError)
-  }, [])
 
   return (
     <LoginLayout>
@@ -95,11 +78,12 @@ export default function LoginClient() {
             <circle cx="700" cy="80" r="160" fill="#ecbc32" fillOpacity="0.06" />
             <circle cx="650" cy="420" r="120" fill="#bd202e" fillOpacity="0.05" />
           </svg>
-          {mounted && !splineFailed && (
-            <div className="absolute inset-0">
-              <SplineLoader scene="https://prod.spline.design/kymVcwu2ztxC7hDA/scene.splinecode" />
-            </div>
-          )}
+          <div className="absolute inset-0">
+            {/* Decorative gradient background (Spline removed) */}
+            <div className="w-full h-full" style={{
+              background: 'radial-gradient(circle at 10% 20%, rgba(41,168,224,0.08), transparent 8%), radial-gradient(circle at 90% 10%, rgba(236,188,50,0.06), transparent 20%), radial-gradient(circle at 80% 70%, rgba(189,32,46,0.06), transparent 25%)'
+            }} />
+          </div>
         </div>
 
         <div className="flex flex-col items-center justify-center px-6 py-8 mx-auto md:h-screen lg:py-0">
