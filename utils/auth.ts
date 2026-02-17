@@ -1,6 +1,9 @@
 // Client-side auth utilities: token storage and authenticated fetch with refresh
 const BASE_API = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === '1'
+// In-memory debounce to avoid emitting many logout events and causing rapid
+// navigation loops when multiple requests fail concurrently.
+;(globalThis as any).__authLogoutDebounce = (globalThis as any).__authLogoutDebounce || { ts: 0 }
 
 export function setAccessToken(token: string | null) {
   try {
@@ -11,7 +14,20 @@ export function setAccessToken(token: string | null) {
     if (token == null) {
       if (DEBUG_AUTH) console.debug('[auth] clearing accessToken')
       window.localStorage.removeItem('accessToken')
-      emitAuthEvent('auth:logout', {})
+      // Only emit a single logout event within a short window to avoid
+      // redirect loops when many requests fail at once.
+      try {
+        const now = Date.now()
+        const d = (globalThis as any).__authLogoutDebounce
+        if (!d.ts || now - d.ts > 3000) {
+          d.ts = now
+          emitAuthEvent('auth:logout', {})
+        } else if (DEBUG_AUTH) {
+          console.debug('[auth] suppressed duplicate logout event')
+        }
+      } catch (e) {
+        emitAuthEvent('auth:logout', {})
+      }
     } else {
       if (DEBUG_AUTH) console.debug('[auth] setting accessToken', token)
       window.localStorage.setItem('accessToken', token)
@@ -72,19 +88,29 @@ async function refreshAccessToken(): Promise<string | null> {
 
     (globalThis as any).__refreshPromise = (async () => {
     try {
-      // Read refresh token from localStorage (client stores it on login)
-      const refreshToken = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem('refreshToken') : null;
-      if (!refreshToken) return null
-      const res = await fetch(`${BASE_API}/api/auth/refresh-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      })
+      const useCookie = process.env.NEXT_PUBLIC_USE_COOKIE_REFRESH === '1'
+      let res: Response
+      if (useCookie) {
+        // Rely on httpOnly cookie; send POST with credentials to include cookie
+        res = await fetch(`${BASE_API}/api/auth/refresh-token`, { method: 'POST', credentials: 'include' })
+      } else {
+        // Read refresh token from localStorage (client stores it on login)
+        const refreshToken = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem('refreshToken') : null;
+        if (!refreshToken) return null
+        res = await fetch(`${BASE_API}/api/auth/refresh-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ refreshToken })
+        })
+      }
       if (!res.ok) return null
       const data = await res.json().catch(() => null)
-      if (data && data.token) {
+        if (data && data.token) {
         setAccessToken(data.token)
-        if (data.refreshToken) {
+        // If not using cookie refresh, persist returned refreshToken; otherwise server set cookie
+        const useCookiePersist = process.env.NEXT_PUBLIC_USE_COOKIE_REFRESH === '1'
+        if (!useCookiePersist && data.refreshToken) {
           try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('refreshToken', data.refreshToken) } catch(e){}
         }
         return data.token
@@ -103,7 +129,27 @@ async function refreshAccessToken(): Promise<string | null> {
 
 // fetch with Authorization header, automatically tries refresh once on 401
 export async function fetchWithAuth(input: RequestInfo, init?: RequestInit, triedRefresh = false): Promise<Response> {
-  const token = getAccessToken()
+  let token = getAccessToken()
+  // If access token will expire within ~60s, proactively refresh it to avoid
+  // sending requests that immediately return 401. This keeps the UX smooth
+  // and reduces refresh races.
+  try {
+    const tokenWillExpireSoon = (tk: string | null) => {
+      if (!tk) return true
+      try {
+        const payload = JSON.parse(atob(tk.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+        return (payload.exp || 0) < Math.floor(Date.now() / 1000) + 60
+      } catch (e) {
+        return true
+      }
+    }
+    if (token && tokenWillExpireSoon(token)) {
+      const newToken = await refreshAccessToken()
+      if (newToken) token = newToken
+    }
+  } catch (e) {
+    // best-effort; if anything fails, proceed and let server respond
+  }
   const headers = new Headers(init?.headers || {})
   if (token) headers.set('Authorization', `Bearer ${token}`)
 

@@ -14,7 +14,19 @@ export function useToast() {
 
 export default function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  // simple dedupe map to avoid spamming identical messages rapidly
+  const lastMessagesRef = React.useRef<Map<string, number>>(new Map())
+  const DEDUPE_WINDOW_MS = 3000
+
   const addToast = useCallback((message: string, type: ToastType = 'info') => {
+    const now = Date.now()
+    const last = lastMessagesRef.current.get(message)
+    if (last && now - last < DEDUPE_WINDOW_MS) {
+      // suppress duplicate toast
+      return
+    }
+    lastMessagesRef.current.set(message, now)
+
     const id = Date.now() + Math.floor(Math.random() * 1000)
     setToasts((t) => [...t, { id, message, type }])
     // auto-dismiss after 5s
