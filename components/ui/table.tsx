@@ -1,3 +1,19 @@
+import React from 'react'
+
+interface Props {
+  children: React.ReactNode
+  className?: string
+}
+
+export default function TableWrapper({ children, className='' }: Props) {
+  return (
+    <div className={`overflow-x-auto w-full -mx-4 sm:mx-0 ${className}`}>
+      <div className="min-w-[680px]">
+        <table className="min-w-full divide-y divide-[hsl(var(--border))]">{children}</table>
+      </div>
+    </div>
+  )
+}
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from './sidebar'
 import ProfileMenu from './profile-menu'
 import { getAccessToken } from '@/utils/auth'
@@ -81,32 +82,59 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="min-h-screen flex relative">
-      {/* Mobile overlay when sidebar open */}
+    <div className="min-h-screen flex relative bg-slate-50">
       {showSidebar && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setShowSidebar(false)} />
       )}
 
       <Sidebar mobileOpen={showSidebar ? showSidebar : undefined} onClose={() => setShowSidebar(false)} />
 
-      <div className="flex-1 relative z-10">
-        <header className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-200" style={{ background: 'linear-gradient(90deg, #29a8e0 0%, #ecbc32 50%, #bd202e 100%)' }}>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setShowSidebar(s => !s)} className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 md:hidden">☰</button>
-            <div className="hidden md:block text-lg font-medium">Operations Dashboard</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <a href="/jobs" className="text-sm text-white/95">Jobs</a>
-            <ProfileMenu />
+      <div className="flex-1 relative z-10 md:ml-80">
+        <header className="sticky top-0 z-20">
+          <div className="flex items-center justify-between px-4 md:px-8 py-2 md:py-3 border-b border-white/5 shadow-sm bg-[hsl(var(--sidebar-background))] text-[hsl(var(--sidebar-foreground))]">
+            <div className="flex items-center gap-3">
+              <button aria-label="Open menu" onClick={() => setShowSidebar(s => !s)} className="p-2 rounded hover:bg-white/5 md:hidden">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+              <HeaderTitle />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <a href="/jobs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Jobs</a>
+              <a href="/admin/fetch-logs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Fetch Logs</a>
+              <a href="/upload" className="hidden md:inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-95 transition">Upload</a>
+              <ProfileMenu />
+            </div>
           </div>
         </header>
 
-        <main className="p-6">
-          <div className="max-w-7xl mx-auto bg-card text-card-foreground rounded-lg shadow-md p-8">
-            {children}
-          </div>
+        <main className="p-6 md:p-8">
+          <div className="max-w-6xl mx-auto">{children}</div>
         </main>
       </div>
     </div>
   )
+}
+
+function HeaderTitle() {
+  const pathname = usePathname() || '/'
+
+  const mapTitle = React.useMemo(() => {
+    const map: Record<string, string> = {
+      '/': 'Dashboard',
+      '/dashboard': 'Operations Dashboard',
+      '/jobs': 'Jobs',
+      '/upload': 'Upload',
+      '/reports': 'Reports',
+      '/settings': 'Settings',
+    }
+    if (map[pathname]) return map[pathname]
+
+    // fallback: use last path segment
+    const seg = pathname.split('/').filter(Boolean).pop()
+    if (!seg) return 'Dashboard'
+    return seg.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  }, [pathname])
+
+  return <div className="hidden md:flex items-center text-sm text-muted-foreground font-medium">{mapTitle}</div>
 }

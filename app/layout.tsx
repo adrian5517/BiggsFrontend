@@ -27,7 +27,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${poppins.className} antialiased bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100`}>
+      <body className={`${poppins.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
           <ClientShell>
             {children}
           </ClientShell>

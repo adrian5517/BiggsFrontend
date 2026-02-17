@@ -84,7 +84,7 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
         initial={false}
         animate={mobile ? { x: mobileOpen ? 0 : -baseMobileWidth } : { width: collapsed ? 80 : 320 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className={`fixed inset-y-0 left-0 z-40 md:relative md:static bg-gradient-to-br from-white via-slate-50/50 to-slate-100/30 border-r border-slate-200/80 shadow-2xl shadow-slate-200/50 overflow-hidden backdrop-blur-xl ${
+        className={`fixed inset-y-0 left-0 z-40 bg-gradient-to-br from-white via-slate-50/50 to-slate-100/30 border-r border-slate-200/80 shadow-2xl shadow-slate-200/50 overflow-hidden backdrop-blur-xl ${
           mobile ? 'w-80' : collapsed ? 'w-20' : 'w-80'
         }`}
         style={{ boxSizing: 'border-box' }}
@@ -199,6 +199,14 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
               </svg>
             }>
               Files
+            </NavItem>
+
+            <NavItem href="/admin/fetch-logs" collapsed={collapsed} icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                <path d="M3 7h18M3 11h18M7 15h10M7 19h10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            }>
+              Fetch Logs
             </NavItem>
 
             <NavItem href="/master" collapsed={collapsed} icon={
