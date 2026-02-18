@@ -26,7 +26,7 @@ export default function LoginLayout({ children }: { children: React.ReactNode })
         </svg>
       </div>
 
-      <div className="relative z-10 flex flex-col min-h-screen items-start justify-start px-6 py-8">
+      <div className="relative z-10 flex flex-col min-h-screen items-start justify-start ">
         <div className="w-full mx-auto">{children}</div>
       </div>
     </div>

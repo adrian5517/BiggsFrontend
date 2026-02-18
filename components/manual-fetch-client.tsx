@@ -45,7 +45,7 @@ const css = `
   --radius-sm:  8px;
   --radius:     12px;
   --radius-lg:  16px;
-  --font-ui:    'DM Sans', sans-serif;
+  --font-ui:    'Poppins', sans-serif;
   --font-mono:  'DM Mono', monospace;
   --t:          220ms cubic-bezier(0.4,0,0.2,1);
 
@@ -77,7 +77,7 @@ const css = `
   align-items: center;
   justify-content: space-between;
   padding: 18px 22px;
-  background: var(--navy);
+  background: var(--gold);
   position: relative;
   overflow: hidden;
 }
@@ -110,7 +110,7 @@ const css = `
 }
 
 .mfc-title {
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: #fff;
@@ -570,14 +570,7 @@ const Ico = {
       <rect x="6" y="6" width="12" height="12" rx="1.5"/>
     </svg>
   ),
-  Trash: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="13" height="13">
-      <polyline points="3 6 5 6 21 6"/>
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-      <path d="M10 11v6M14 11v6"/>
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-    </svg>
-  ),
+ 
   Terminal: () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="11" height="11">
       <polyline points="4 17 10 11 4 5"/>
@@ -750,9 +743,7 @@ export default function ManualFetchClient() {
                 <span className="mfc-live-dot" /> Live
               </span>
             )}
-            <button className="mfc-icon-btn" title="Clear output" onClick={() => setMessages([])}>
-              <Ico.Trash />
-            </button>
+            
           </div>
           <div className="mfc-header-stripe" />
         </div>
@@ -791,7 +782,7 @@ export default function ManualFetchClient() {
           <SummaryChips selected={selected} date={date} positions={positions} />
 
           <div className="mfc-actions">
-            <button className="mfc-btn mfc-btn-primary" onClick={handleStart} disabled={live}>
+            <button className="mfc-btn mfc-btn-accent" onClick={handleStart} disabled={live}>
               <Ico.Play /> {live ? "Running…" : "Start Fetch"}
             </button>
             <button className="mfc-btn mfc-btn-ghost" onClick={handleStop}>

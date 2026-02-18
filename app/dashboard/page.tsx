@@ -68,9 +68,9 @@ const css = `
   padding: 32px 24px 56px;
 }
 
-@media (max-width: 640px) {
-  .dash-shell { padding: 20px 16px 40px; }
-}
+// @media (max-width: 640px) {
+//   .dash-shell { padding: 20px 16px 40px; }
+// }
 
 .dash-inner {
   max-width: 1100px;
@@ -130,7 +130,7 @@ const css = `
 }
 
 .dash-title {
-  font-family: var(--font-display);
+  font-family: 'Poppins', sans-serif;
   font-size: 24px; font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
@@ -372,9 +372,9 @@ function DashboardContent() {
           {/* Top bar */}
           <div className="dash-topbar">
             <div className="dash-brand">
-              <div className="dash-logo">
+              {/* <div className="dash-logo">
                 <span className="dash-logo-text">B</span>
-              </div>
+              </div> */}
               <div className="dash-heading-group">
                 <span className="dash-eyebrow">Biggs 1983 · Operations</span>
                 <h1 className="dash-title">Ops Dashboard</h1>
@@ -394,8 +394,8 @@ function DashboardContent() {
               value={stats?.liveEvents}
               sub="Active queue activity"
               icon={<Ico.Activity />}
-              accentClass="gold"
-              iconClass="stat-icon-gold"
+              accentClass="sky"
+              iconClass="stat-icon-sky"
               trend="up"
               trendLabel="↑ Live"
               loading={loading}
@@ -405,8 +405,8 @@ function DashboardContent() {
               value={stats?.uploads}
               sub="CSV uploads processed"
               icon={<Ico.Upload />}
-              accentClass="sky"
-              iconClass="stat-icon-sky"
+              accentClass="gold"
+              iconClass="stat-icon-gold"
               trend="flat"
               trendLabel="Today"
               loading={loading}

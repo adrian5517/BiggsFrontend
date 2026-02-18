@@ -28,9 +28,9 @@ export default function ProfileMenu() {
       >
         {user && user.profilePicture ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.profilePicture} alt={user.username || 'User'} className="h-8 w-8 rounded-full object-cover" />
+          <img src={user.profilePicture} alt={user.username || 'User'} className="h-8 w-8 rounded-full object-cover bg-[hsl(var(--accent-foreground))]" />
         ) : (
-          <div className="h-8 w-8 rounded-full bg-[#29a8e0] text-white flex items-center justify-center font-semibold">{user && user.username ? String(user.username).charAt(0).toUpperCase() : 'A'}</div>
+          <div className="h-8 w-8 rounded-full bg-[hsl(var(--primary))] text-white flex items-center justify-center font-semibold">{user && user.username ? String(user.username).charAt(0).toUpperCase() : 'A'}</div>
         )}
         <span className="hidden sm:inline text-sm">{user?.username || 'Admin'}</span>
       </button>

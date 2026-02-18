@@ -74,7 +74,7 @@ const css = `
   align-items: center;
   justify-content: space-between;
   padding: 18px 22px;
-  background: var(--navy);
+  background: var(--red);
   position: relative;
   overflow: hidden;
 }
@@ -98,14 +98,14 @@ const css = `
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   background: rgba(77,182,232,0.14);
-  border: 1px solid rgba(77,182,232,0.3);
+  border: 1px solid var(--red);
   font-size: 17px; flex-shrink: 0;
 }
 
 .msc-title {
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 17px; font-weight: 700;
-  color: #fff; line-height: 1.2;
+  color: var(--surface); line-height: 1.2;
   letter-spacing: 0.01em;
 }
 .msc-subtitle {
@@ -146,7 +146,7 @@ const css = `
   color: var(--text-muted);
   display: flex; align-items: center; gap: 6px;
 }
-.msc-label-icon { color: var(--sky); opacity: 0.9; flex-shrink: 0; }
+.msc-label-icon { color: var(--red); opacity: 0.9; flex-shrink: 0; }
 
 .msc-input {
   background: var(--surface-2);
@@ -179,7 +179,7 @@ const css = `
   margin-bottom: 10px;
 }
 .msc-section-left { display: flex; align-items: center; gap: 6px; }
-.msc-section-icon { color: var(--sky); opacity: 0.9; }
+.msc-section-icon { color: var(--red); opacity: 0.9; }
 
 /* ── Select all ── */
 .msc-select-all {
@@ -187,11 +187,11 @@ const css = `
   cursor: pointer; user-select: none;
   font-size: 12px; font-weight: 500; color: var(--text-muted);
   padding: 4px 10px; border-radius: 20px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--red);
   background: var(--surface-2);
   transition: all var(--t);
 }
-.msc-select-all:hover { border-color: var(--sky); color: var(--text-secondary); }
+.msc-select-all:hover { border-color: var(--red); color: var(--text-secondary); }
 .msc-select-all input[type="checkbox"] {
   appearance: none; -webkit-appearance: none;
   width: 13px; height: 13px;
@@ -200,7 +200,7 @@ const css = `
   cursor: pointer; position: relative;
   transition: all var(--t); flex-shrink: 0;
 }
-.msc-select-all input[type="checkbox"]:checked { background: var(--sky); border-color: var(--sky); }
+.msc-select-all input[type="checkbox"]:checked { background: var(--red); border-color: var(--red); }
 .msc-select-all input[type="checkbox"]:checked::after {
   content: '✓'; position: absolute;
   font-size: 8px; font-weight: 700; color: #fff;
@@ -238,7 +238,7 @@ const css = `
   flex-shrink: 0; transition: all var(--t);
   font-size: 9px; font-weight: 700; color: #fff;
 }
-.msc-branch-row.sel .msc-branch-cb { background: var(--sky); border-color: var(--sky); }
+.msc-branch-row.sel .msc-branch-cb { background: var(--red); border-color: var(--red); }
 
 .msc-branch-name {
   font-family: var(--font-mono);
@@ -290,7 +290,7 @@ const css = `
   position: absolute; top: 2px; left: 2px;
   transition: all var(--t);
 }
-.msc-toggle-wrap.on .msc-toggle-thumb { background: var(--sky); left: 18px; }
+.msc-toggle-wrap.on .msc-toggle-thumb { background: var(--red); left: 18px; }
 
 .msc-toggle-text { display: flex; flex-direction: column; gap: 1px; }
 .msc-toggle-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
@@ -335,7 +335,7 @@ const css = `
 .msc-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
 .msc-btn-sky {
-  background: var(--sky); color: var(--navy);
+  background: var(--red-light); color: var(--text-primary);
   box-shadow: 0 2px 8px rgba(77,182,232,0.28);
   font-weight: 700;
 }
@@ -412,7 +412,7 @@ const css = `
   overflow-y: auto;
   padding: 14px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.07) transparent;
+  scrollbar-color: rgba(150, 89, 89, 0.91) transparent;
 }
 
 .msc-panel-empty {
@@ -511,14 +511,7 @@ const Ico = {
   Square: () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
   ),
-  Trash: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="13" height="13">
-      <polyline points="3 6 5 6 21 6"/>
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-      <path d="M10 11v6M14 11v6"/>
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-    </svg>
-  ),
+ 
   Terminal: () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="11" height="11">
       <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
@@ -662,7 +655,7 @@ export default function MissingScanClient() {
           </div>
           <div className="msc-header-right">
             {live && <span className="msc-live"><span className="msc-live-dot" />Live</span>}
-            <button className="msc-icon-btn" title="Clear" onClick={() => setMessages([])}><Ico.Trash /></button>
+            
           </div>
           <div className="msc-header-stripe" />
         </div>

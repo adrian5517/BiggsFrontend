@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
-import { fetchWithAuth, getAccessToken } from '@/utils/auth'
+import auth, { getAccessToken as _getAccessToken } from '@/utils/auth'
 import Table, { TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
@@ -26,7 +26,7 @@ export default function FetchLogsClient() {
 
   async function loadBranches() {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/api/fetch/branches`)
+      const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/branches`)
       if (!res.ok) return
       const data = await res.json().catch(()=>null)
       if (Array.isArray(data)) setBranches(data.map(String))
@@ -42,7 +42,7 @@ export default function FetchLogsClient() {
       if (filterBranch) q.set('branch', filterBranch)
       if (startDate) q.set('startDate', startDate)
       if (endDate) q.set('endDate', endDate)
-      const res = await fetchWithAuth(`${API_BASE}/api/fetch/files?${q.toString()}`)
+      const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/files?${q.toString()}`)
       if (!res.ok) throw new Error(`Failed: ${res.status}`)
       const data = await res.json().catch(() => null)
       if (data) {
@@ -55,18 +55,20 @@ export default function FetchLogsClient() {
   }
 
   function viewRaw(id: string) {
-    const token = getAccessToken()
+    const token = (_getAccessToken as any)()
     const url = `${API_BASE}/api/fetch/files/${id}/raw${token ? `?token=${encodeURIComponent(token)}` : ''}`
     window.open(url, '_blank')
   }
 
   function viewRows(id: string) {
     // Open preview modal: fetch rows and show JSON
-    const token = getAccessToken()
-    const url = `${API_BASE}/api/fetch/files/${id}/rows?limit=200${token ? `&token=${encodeURIComponent(token)}` : ''}`
+    const token = (_getAccessToken as any)()
+    const url = `${API_BASE}/api/fetch/files/${id}/rows?limit=200${token ? `&token=${encodeURIComponent(token)}` : ''}`;
     (async () => {
       try {
-        const res = await fetchWithAuth(url)
+        // debug: log computed url and token to help diagnose interop issues
+        try { console.debug('fetch-logs preview URL', url, 'token=', token ? 'yes' : 'no') } catch (e) {}
+        const res = await auth.fetchWithAuth(url)
         if (!res.ok) throw new Error(`Failed rows: ${res.status}`)
         const data = await res.json().catch(()=>null)
         setPreviewRows(Array.isArray(data) ? data : [])
@@ -109,20 +111,20 @@ export default function FetchLogsClient() {
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2 items-center">
-        <select className="input" value={filterBranch} onChange={(e)=>setFilterBranch(e.target.value)}>
+        <select className="input py-2 px-2 border border-black-200 rounded-md" value={filterBranch} onChange={(e)=>setFilterBranch(e.target.value)}>
           <option value="">All branches</option>
           {branches.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <input type="date" className="input" value={startDate} onChange={e=>setStartDate(e.target.value)} />
+        </select >
+        <input type="date" className="input align-items-center " value={startDate} onChange={e=>setStartDate(e.target.value)} />
         <input type="date" className="input" value={endDate} onChange={e=>setEndDate(e.target.value)} />
-        <button className="btn btn-sm" onClick={()=>{ setPage(1); load(); }}>Apply</button>
-        <button className="btn btn-sm" onClick={()=>{ setFilterBranch(''); setStartDate(''); setEndDate(''); setPage(1); load(); }}>Clear</button>
+        <button className="btn btn-sm border border-black-200 rounded-md py-2 px-2 bg-yellow-500 hover:bg-yellow-400" onClick={()=>{ setPage(1); load(); }}>Apply</button>
+        <button className="btn btn-sm border border-black-200 rounded-md py-2 px-2 bg-red-700 hover:bg-red-400" onClick={()=>{ setFilterBranch(''); setStartDate(''); setEndDate(''); setPage(1); load(); }}>Clear</button>
         <div className="ml-auto flex gap-2">
           <button className="btn btn-sm" onClick={exportCSV} style={{background:'hsl(var(--accent))',color:'#fff'}}>Export Page CSV</button>
           <button className="btn btn-sm" onClick={() => {
             const q = new URLSearchParams(); if (filterBranch) q.set('branch', filterBranch); if (startDate) q.set('startDate', startDate); if (endDate) q.set('endDate', endDate);
             q.set('zip','true');
-            const token = getAccessToken();
+            const token = (_getAccessToken as any)();
             const url = `${API_BASE}/api/fetch/files/export?${q.toString()}${token?`&token=${encodeURIComponent(token)}`:''}`;
             window.open(url, '_blank');
           }} style={{background:'hsl(var(--primary))',color:'#fff'}}>Export All (gz)</button>

@@ -9,6 +9,7 @@ import { getAccessToken } from '@/utils/auth'
 export default function ClientShell({ children }: { children: React.ReactNode }) {
   const [authed, setAuthed] = useState<boolean>(false)
   const [showSidebar, setShowSidebar] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     const check = () => setAuthed(!!getAccessToken())
@@ -87,11 +88,16 @@ export default function ClientShell({ children }: { children: React.ReactNode })
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setShowSidebar(false)} />
       )}
 
-      <Sidebar mobileOpen={showSidebar ? showSidebar : undefined} onClose={() => setShowSidebar(false)} />
+      <Sidebar
+        mobileOpen={showSidebar ? showSidebar : undefined}
+        onClose={() => setShowSidebar(false)}
+        collapsed={sidebarCollapsed}
+        onCollapseChange={setSidebarCollapsed}
+      />
 
-      <div className="flex-1 relative z-10 md:ml-80">
+      <div className={`flex-1 relative z-10 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-80'}`}>
         <header className="sticky top-0 z-20">
-          <div className="flex items-center justify-between px-4 md:px-8 py-2 md:py-3 border-b border-white/5 shadow-sm bg-[hsl(var(--sidebar-background))] text-[hsl(var(--sidebar-foreground))]">
+          <div className="flex items-center justify-between px-4 md:px-8 py-2 md:py-3 border-b border-white/5 shadow-sm bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]">
             <div className="flex items-center gap-3">
               <button aria-label="Open menu" onClick={() => setShowSidebar(s => !s)} className="p-2 rounded hover:bg-white/5 md:hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -100,15 +106,15 @@ export default function ClientShell({ children }: { children: React.ReactNode })
             </div>
 
             <div className="flex items-center gap-3">
-              <a href="/jobs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Jobs</a>
+              {/* <a href="/jobs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Jobs</a>
               <a href="/admin/fetch-logs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Fetch Logs</a>
-              <a href="/upload" className="hidden md:inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-95 transition">Upload</a>
+              <a href="/upload" className="hidden md:inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[hsl(var(--accent))] text-[hsl(var(--primary-foreground))] hover:opacity-95 transition">Upload</a> */}
               <ProfileMenu />
             </div>
           </div>
         </header>
 
-        <main className="p-6 md:p-8">
+        <main className="">
           <div className="max-w-6xl mx-auto">{children}</div>
         </main>
       </div>
@@ -136,5 +142,5 @@ function HeaderTitle() {
     return seg.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   }, [pathname])
 
-  return <div className="hidden md:flex items-center text-sm text-muted-foreground font-medium">{mapTitle}</div>
+  return <div className="hidden md:flex items-center text-sm text-primary-foreground font-bold">{mapTitle}</div>
 }

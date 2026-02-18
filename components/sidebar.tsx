@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 type NavItemProps = {
@@ -55,9 +55,15 @@ const NavItem = ({ href, icon, children, collapsed }: NavItemProps) => {
   )
 }
 
-export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
+export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp, onCollapseChange }: { mobileOpen?: boolean; onClose?: () => void; collapsed?: boolean; onCollapseChange?: (c: boolean) => void }) {
   const mobile = typeof mobileOpen !== 'undefined'
-  const [collapsed, setCollapsed] = useState(false)
+  const isControlled = typeof collapsedProp !== 'undefined'
+  const [internalCollapsed, setInternalCollapsed] = useState<boolean>(collapsedProp ?? false)
+  // keep internal state in sync when used uncontrolled and prop appears
+  useEffect(() => {
+    if (!isControlled && typeof collapsedProp !== 'undefined') setInternalCollapsed(collapsedProp)
+  }, [collapsedProp, isControlled])
+  const collapsed = isControlled ? !!collapsedProp : internalCollapsed
   const [logoFailed, setLogoFailed] = useState(false)
   const baseMobileWidth = 320
 
@@ -133,7 +139,13 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
               <motion.div
                 whileHover={{ scale: 1.02 }}
                 className="flex items-center gap-4 cursor-pointer"
-                onClick={() => setCollapsed(s => !s)}
+                onClick={() => {
+                  if (isControlled) {
+                    if (onCollapseChange) onCollapseChange(!collapsed)
+                  } else {
+                    setInternalCollapsed((s) => !s)
+                  }
+                }}
               >
                 {!logoFailed ? (
                   <motion.img 
@@ -261,9 +273,15 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
             className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50"
             whileHover={{ scale: 1.05, y: -2 }}
           >
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setCollapsed(s => !s)}
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  if (isControlled) {
+                    if (onCollapseChange) onCollapseChange(!collapsed)
+                  } else {
+                    setInternalCollapsed((s) => !s)
+                  }
+                }}
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               className="relative group"
@@ -336,7 +354,7 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
                 transition={{ duration: 0.3, delay: 0.05 }}
               />
               <motion.div 
-                className={`${collapsed ? 'w-12 h-1.5 rounded-full mx-auto' : 'w-full h-2'} bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg`}
+                className={`${collapsed ? 'w-12 h-1.5 rounded-full mx-auto' : 'w-full h-2'} bg-gradient-to-r from-sky-400 to-sky-500 shadow-lg`}
                 animate={{ 
                   width: collapsed ? 48 : '100%',
                   height: collapsed ? 6 : 8 
