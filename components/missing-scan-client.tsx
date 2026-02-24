@@ -604,6 +604,21 @@ export default function MissingScanClient() {
   const [queueStatus, setQueueStatus] = useState("");
   const itemsPerPage = 10;
 
+  const getFailureReason = (row: any) => {
+    const missingCount = Array.isArray(row?.missingDates) ? row.missingDates.length : 0;
+    const totalDates = Number(row?.totalDates ?? 0);
+    const existingCount = Number(row?.existingCount ?? 0);
+
+    if (missingCount <= 0) return "No missing dates";
+    if (existingCount === 0 || (totalDates > 0 && missingCount === totalDates)) {
+      return "No ingested files found in selected range";
+    }
+    if (missingCount >= 7) {
+      return "Likely no/late submission or repeated fetch failure";
+    }
+    return "Partial gap (late upload or ingest failure)";
+  };
+
   const handleStartScan = async () => {
     const body: any = { positions };
     if (branches.length) body.branches = branches;
@@ -653,7 +668,7 @@ export default function MissingScanClient() {
     setLive(false);
   };
 
-  const handleQueueFetchScan = async () => {
+  const handleQueueFetchScan = async (targetRow?: any) => {
     if (!scanResult || !scanResult.results || scanResult.results.length === 0) {
       setQueueStatus("No scan results to queue.");
       return;
@@ -664,7 +679,8 @@ export default function MissingScanClient() {
     }
 
     setQueueing(true);
-    setQueueStatus(`Queuing fetch for missing dates (${scanResult.start || 'auto'} to ${scanResult.end || 'auto'})...`);
+    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
+    setQueueStatus(`Queuing fetch for missing dates (${scanResult.start || 'auto'} to ${scanResult.end || 'auto'}) • ${scopeText}...`);
 
     try {
       const body: any = {
@@ -673,10 +689,15 @@ export default function MissingScanClient() {
       };
 
       // Optional filters for this queue action while keeping same snapshot
-      if (branches.length) {
-        body.branches = branches;
+      if (targetRow) {
+        body.branches = [String(targetRow.branch)];
+        body.positions = [String(targetRow.pos)];
+      } else {
+        if (branches.length) {
+          body.branches = branches;
+        }
+        if (positions.length) body.positions = positions;
       }
-      if (positions.length) body.positions = positions;
 
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
         method: 'POST',
@@ -704,7 +725,7 @@ export default function MissingScanClient() {
     }
   };
 
-  const handleReIngest = async () => {
+  const handleReIngest = async (targetRow?: any) => {
     if (!scanResult || !scanResult.results || scanResult.results.length === 0) {
       setQueueStatus("No scan results to re-ingest.");
       return;
@@ -715,7 +736,8 @@ export default function MissingScanClient() {
     }
 
     setReingesting(true);
-    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end})...`);
+    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
+    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end}) • ${scopeText}...`);
 
     try {
       const body: any = {
@@ -724,16 +746,21 @@ export default function MissingScanClient() {
         mode: 're-ingest-missing-scan',
       };
 
-      if (branches.length) {
-        body.branches = branches;
-      } else if (scanResult.results && scanResult.results.length) {
-        body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
-      }
+      if (targetRow) {
+        body.branches = [String(targetRow.branch)];
+        body.positions = [String(targetRow.pos)];
+      } else {
+        if (branches.length) {
+          body.branches = branches;
+        } else if (scanResult.results && scanResult.results.length) {
+          body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
+        }
 
-      if (positions.length) {
-        body.positions = positions;
-      } else if (scanResult.results && scanResult.results.length) {
-        body.positions = [...new Set(scanResult.results.map((r: any) => String(r.pos)))];
+        if (positions.length) {
+          body.positions = positions;
+        } else if (scanResult.results && scanResult.results.length) {
+          body.positions = [...new Set(scanResult.results.map((r: any) => String(r.pos)))];
+        }
       }
 
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/start`, {
@@ -940,12 +967,14 @@ export default function MissingScanClient() {
                               <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Pos</th>
                               <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing</th>
                               <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing Dates</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Failure Reason</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {paginated.length === 0 ? (
                               <tr>
-                                <td colSpan={4} style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)' }}>No matching rows</td>
+                                <td colSpan={6} style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)' }}>No matching rows</td>
                               </tr>
                             ) : paginated.map((r: any, i: number) => (
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(15,31,61,0.02)' }}>
@@ -969,6 +998,29 @@ export default function MissingScanClient() {
                                   ) : (
                                     <span style={{ color: 'var(--text-muted)' }}>None</span>
                                   )}
+                                </td>
+                                <td style={{ padding: '8px 6px', color: 'var(--text-secondary)', minWidth: '220px' }}>
+                                  {getFailureReason(r)}
+                                </td>
+                                <td style={{ padding: '8px 6px', minWidth: '240px' }}>
+                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                    <button
+                                      className="msc-btn msc-btn-sky"
+                                      style={{ padding: '4px 8px', fontSize: '10px' }}
+                                      onClick={() => handleQueueFetchScan(r)}
+                                      disabled={queueing || reingesting || !(r.missingDates?.length > 0)}
+                                    >
+                                      Queue Fetch
+                                    </button>
+                                    <button
+                                      className="msc-btn msc-btn-gold"
+                                      style={{ padding: '4px 8px', fontSize: '10px' }}
+                                      onClick={() => handleReIngest(r)}
+                                      disabled={queueing || reingesting || !(r.missingDates?.length > 0)}
+                                    >
+                                      Re-ingest
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}

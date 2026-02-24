@@ -273,6 +273,21 @@ export default function MissingScanResultTableClient() {
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const pageSize = 10;
 
+  const getFailureReason = (row: any) => {
+    const missingCount = Array.isArray(row?.missingDates) ? row.missingDates.length : 0;
+    const totalDates = Number(row?.totalDates ?? 0);
+    const existingCount = Number(row?.existingCount ?? 0);
+
+    if (missingCount <= 0) return "No missing dates";
+    if (existingCount === 0 || (totalDates > 0 && missingCount === totalDates)) {
+      return "No ingested files found in selected range";
+    }
+    if (missingCount >= 7) {
+      return "Likely no/late submission or repeated fetch failure";
+    }
+    return "Partial gap (late upload or ingest failure)";
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -313,14 +328,15 @@ export default function MissingScanResultTableClient() {
     }
   };
 
-  const handleQueueFetchScan = async () => {
+  const handleQueueFetchScan = async (targetRow?: any) => {
     if (!scanResult?.snapshotId) {
       setQueueStatus("Snapshot not found. Run scan again before queueing.");
       return;
     }
 
     setQueueing(true);
-    setQueueStatus(`Queuing scan (${scanResult?.start || 'auto'} to ${scanResult?.end || 'auto'})...`);
+    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
+    setQueueStatus(`Queuing scan (${scanResult?.start || 'auto'} to ${scanResult?.end || 'auto'}) • ${scopeText}...`);
 
     try {
       const body: any = {
@@ -330,11 +346,16 @@ export default function MissingScanResultTableClient() {
       };
 
       // Use selected branches or all branches from scan result
-      if (selectedBranches.length) {
-        body.branches = selectedBranches;
-      } else if (scanResult?.results && scanResult.results.length) {
-        const uniqueBranches = [...new Set(scanResult.results.map((r: any) => r.branch))];
-        body.branches = uniqueBranches;
+      if (targetRow) {
+        body.branches = [String(targetRow.branch)];
+        body.positions = [String(targetRow.pos)];
+      } else {
+        if (selectedBranches.length) {
+          body.branches = selectedBranches;
+        } else if (scanResult?.results && scanResult.results.length) {
+          const uniqueBranches = [...new Set(scanResult.results.map((r: any) => r.branch))];
+          body.branches = uniqueBranches;
+        }
       }
       
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
@@ -362,14 +383,15 @@ export default function MissingScanResultTableClient() {
     }
   };
 
-  const handleReIngest = async () => {
+  const handleReIngest = async (targetRow?: any) => {
     if (!scanResult?.start || !scanResult?.end) {
       setQueueStatus("Missing scan date range. Run scan again before re-ingest.");
       return;
     }
 
     setReingesting(true);
-    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end})...`);
+    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
+    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end}) • ${scopeText}...`);
 
     try {
       const body: any = {
@@ -378,18 +400,23 @@ export default function MissingScanResultTableClient() {
         mode: "re-ingest-missing-scan",
       };
 
-      if (selectedBranches.length) {
-        body.branches = selectedBranches;
-      } else if (scanResult?.results && scanResult.results.length) {
-        body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
-      }
+      if (targetRow) {
+        body.branches = [String(targetRow.branch)];
+        body.positions = [String(targetRow.pos)];
+      } else {
+        if (selectedBranches.length) {
+          body.branches = selectedBranches;
+        } else if (scanResult?.results && scanResult.results.length) {
+          body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
+        }
 
-      if (scanResult?.results && scanResult.results.length) {
-        const branchSet = new Set(body.branches || []);
-        const scopedRows = branchSet.size
-          ? scanResult.results.filter((r: any) => branchSet.has(r.branch))
-          : scanResult.results;
-        body.positions = [...new Set(scopedRows.map((r: any) => String(r.pos)))];
+        if (scanResult?.results && scanResult.results.length) {
+          const branchSet = new Set(body.branches || []);
+          const scopedRows = branchSet.size
+            ? scanResult.results.filter((r: any) => branchSet.has(r.branch))
+            : scanResult.results;
+          body.positions = [...new Set(scopedRows.map((r: any) => String(r.pos)))];
+        }
       }
 
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/start`, {
@@ -535,12 +562,14 @@ export default function MissingScanResultTableClient() {
                     <th>Total Dates</th>
                     <th>Missing Count</th>
                     <th>Missing Dates</th>
+                    <th>Failure Reason</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="msr-none">No rows match your branch filter.</td>
+                      <td colSpan={7} className="msr-none">No rows match your branch filter.</td>
                     </tr>
                   ) : (
                     pageRows.map((row, index) => {
@@ -578,6 +607,25 @@ export default function MissingScanResultTableClient() {
                             ) : (
                               <span className="msr-none">None</span>
                             )}
+                          </td>
+                          <td>{getFailureReason(row)}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button
+                                className="msr-btn"
+                                onClick={() => handleQueueFetchScan(row)}
+                                disabled={queueing || reingesting || !(row.missingDates?.length > 0)}
+                              >
+                                Queue Fetch
+                              </button>
+                              <button
+                                className="msr-btn"
+                                onClick={() => handleReIngest(row)}
+                                disabled={queueing || reingesting || !(row.missingDates?.length > 0)}
+                              >
+                                Re-ingest
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
