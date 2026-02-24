@@ -16,6 +16,11 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: 'BIGGS Admin',
   description: 'BIGGS operations dashboard',
+  icons: {
+    icon: '/images/logo.png',
+    apple: '/images/logo.png',
+    shortcut: '/images/logo.png',
+  },
 }
 
 export const viewport: Viewport = {
@@ -27,6 +32,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/images/logo.png" />
+        <link rel="apple-touch-icon" href="/images/logo.png" />
+      </head>
       <body className={`${poppins.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
           <ClientShell>
             {children}

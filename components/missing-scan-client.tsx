@@ -611,33 +611,22 @@ export default function MissingScanClient() {
       setScanResult(json);
       setMessages(m => [...m, { type: "scan-result", json }]);
 
-      if (json.queued && json.jobId) {
-        setLive(true);
-        const token = getAccessToken();
-        const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
-        const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(json.jobId)}${tq}`;
-        if (esRef.current) esRef.current.close();
-        const es = new EventSource(url);
-        esRef.current = es;
-        es.onmessage = ev => {
-          try {
-            const d = JSON.parse(ev.data);
-            setMessages(m => [...m, d]);
-            if (d.type === "complete" || d.type === "error") { es.close(); setLive(false); }
-          } catch { setMessages(m => [...m, { type: "sse-raw", data: ev.data }]); }
-        };
-        es.onerror = () => { setMessages(m => [...m, { type: "sse-error" }]); es.close(); setLive(false); };
-      }
+      // Scan is read-only in this handler: we display results only and do not
+      // open EventSource/SSE here. Use the explicit "Queue Missing Fetches"
+      // action to start ingestion and open SSE for job progress.
     } catch (e) {
-      setMessages(m => [...m, { type: "error", message: String(e) }]);
+      setMessages(m => [...m, { type: 'error', message: String(e) }]);
     }
   };
 
-  const handleStop = () => {
-    if (esRef.current) { esRef.current.close(); esRef.current = null; }
-    setMessages(m => [...m, { type: "stopped" }]);
-    setLive(false);
-  };
+    const handleStop = () => {
+      if (esRef.current) {
+        try { esRef.current.close(); } catch (e) {}
+        esRef.current = null;
+      }
+      setMessages(m => [...m, { type: 'stopped' }]);
+      setLive(false);
+    };
 
   return (
     <div className="msc-root">
@@ -651,11 +640,10 @@ export default function MissingScanClient() {
               <div className="msc-title">Missing Scan</div>
               <div className="msc-subtitle">Inspect & queue missing records</div>
             </div>
-            <span className="msc-badge">Inspection</span>
+            
           </div>
           <div className="msc-header-right">
             {live && <span className="msc-live"><span className="msc-live-dot" />Live</span>}
-            
           </div>
           <div className="msc-header-stripe" />
         </div>
@@ -721,18 +709,8 @@ export default function MissingScanClient() {
           </div>
 
           {/* Auto-queue toggle */}
-          <div style={{ marginTop: 14 }}>
-            <div
-              className={`msc-toggle-wrap ${autoQueue ? "on" : ""}`}
-              onClick={() => setAutoQueue(v => !v)}
-            >
-              <div className="msc-toggle-track"><div className="msc-toggle-thumb" /></div>
-              <div className="msc-toggle-text">
-                <span className="msc-toggle-label">Auto-queue missing fetches</span>
-                <span className="msc-toggle-desc">Automatically queue any gaps found during scan</span>
-              </div>
-            </div>
-          </div>
+          {/* Note: Auto-queue removed. Scans are read-only and only display results.
+              Use the explicit "Queue Missing Fetches" button to start ingestion. */}
 
           {/* Summary chips */}
           {(selected.length > 0 || start || end || positions) && (
@@ -765,6 +743,51 @@ export default function MissingScanClient() {
             </button>
             <button className="msc-btn msc-btn-ghost" onClick={handleStop}>
               <Ico.Square /> Stop
+            </button>
+            <button
+              className="msc-btn msc-btn-primary"
+              onClick={async () => {
+                // Explicitly queue missing fetches by re-calling scan endpoint with autoQueue=true
+                const body: any = {};
+                if (selected.length) body.branches = selected;
+                if (positions) body.positions = positions;
+                if (start) body.start = start;
+                if (end) body.end = end;
+                if (sampleFile) body.sampleFile = sampleFile;
+                body.autoQueue = true;
+                setMessages(m => [...m, { type: 'scan-start', body }]);
+                try {
+                  const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                  });
+                  const json = await resp.json();
+                  if (!resp.ok) { setMessages(m => [...m, { type: 'error', message: json?.message ?? 'Queue failed' }]); return; }
+                  setScanResult(json);
+                  setMessages(m => [...m, { type: 'scan-result', json }]);
+                  if (json.queued && json.jobId) {
+                    setLive(true);
+                    const token = getAccessToken();
+                    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ''))}` : '';
+                    const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(json.jobId)}${tq}`;
+                    if (esRef.current) esRef.current.close();
+                    const es = new EventSource(url);
+                    esRef.current = es;
+                    es.onopen = () => setMessages(m => [...m, { type: 'sse-open', message: `Connected to ${url}` }]);
+                    es.onmessage = ev => {
+                      try { const d = JSON.parse(ev.data); setMessages(m => [...m, d]); if (d.type === 'complete' || d.type === 'error') { es.close(); setLive(false); } }
+                      catch { setMessages(m => [...m, { type: 'sse-raw', data: ev.data }]); }
+                    };
+                    es.onerror = async (err) => {
+                      setMessages(m => [...m, { type: 'sse-error', message: 'EventSource error', detail: String(err) }]);
+                      try { const resp2 = await fetchWithAuth(url, { method: 'GET' }); const txt = await resp2.text().catch(() => null); setMessages(m => [...m, { type: 'sse-error-diagnostic', status: resp2.status, body: txt }]); } catch (e) { setMessages(m => [...m, { type: 'sse-error-diagnostic', error: String(e) }]); }
+                      try { es.close(); } catch (e) {}
+                      setLive(false);
+                    };
+                  }
+                } catch (e) { setMessages(m => [...m, { type: 'error', message: String(e) }]); }
+              }}
+            >
+              Queue Missing Fetches
             </button>
           </div>
 

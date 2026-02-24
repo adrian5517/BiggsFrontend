@@ -80,7 +80,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={onClose}
-              className="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-30 bg-black/20 backdrop-blur-xl md:hidden"
             />
           )}
         </AnimatePresence>
@@ -108,7 +108,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
                   <img 
                     src="/images/logo.png" 
                     alt="BIGGS" 
-                    className="h-10 w-auto drop-shadow-sm" 
+                    className="h-20 w-auto drop-shadow-sm" 
                     onError={() => setLogoFailed(true)} 
                   />
                 ) : (
@@ -213,6 +213,18 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
               Files
             </NavItem>
 
+            <NavItem href="/missing-scan" collapsed={collapsed} icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M17 3h2a2 2 0 0 1 2 2v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="12" r="3" strokeWidth="2" />
+              </svg>
+            }>
+              Missing Scan
+            </NavItem>
+
             <NavItem href="/admin/fetch-logs" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <path d="M3 7h18M3 11h18M7 15h10M7 19h10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -227,6 +239,17 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
               </svg>
             }>
               Master
+            </NavItem>
+
+            <NavItem href="/combine" collapsed={collapsed} icon={
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                <circle cx="9" cy="9" r="3" strokeWidth="2"/>
+                <circle cx="15" cy="9" r="3" strokeWidth="2"/>
+                <circle cx="12" cy="16" r="3" strokeWidth="2"/>
+                <path d="M9 12v3M15 12v3" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            }>
+              Combine
             </NavItem>
 
             <NavItem href="/jobs" collapsed={collapsed} icon={

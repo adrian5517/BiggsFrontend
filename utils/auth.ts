@@ -177,7 +177,19 @@ export async function fetchWithAuth(input: RequestInfo, init?: RequestInit, trie
     // ignore
   }
 
-  const res = await fetch(input, { ...(init || {}), headers, credentials: init?.credentials ?? 'include' })
+  let res: Response
+  try {
+    res = await fetch(input, { ...(init || {}), headers, credentials: init?.credentials ?? 'include' })
+  } catch (fetchErr) {
+    // Network error (CORS, server down, DNS). Return a synthetic Response so callers can handle gracefully.
+    try {
+      const body = JSON.stringify({ message: String(fetchErr) });
+      return new Response(body, { status: 0, statusText: 'network-error', headers: { 'Content-Type': 'application/json' } }) as Response;
+    } catch (e) {
+      // Fallback: rethrow if Response construction fails
+      throw fetchErr;
+    }
+  }
   // Make `res.json()` tolerant and safe: use a clone and cache parsed result so
   // body consumption won't throw when callers call `.json()` multiple times.
   try {

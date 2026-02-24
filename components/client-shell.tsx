@@ -31,6 +31,24 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     }
   }, [])
 
+  // listen for external requests to set sidebar collapsed state (e.g., preview modal)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const ev = e as CustomEvent;
+        if (ev && ev.detail) {
+          if (typeof ev.detail.collapsed !== 'undefined') setSidebarCollapsed(!!ev.detail.collapsed)
+          // allow callers to request the mobile sidebar be closed (hide overlay)
+          if (ev.detail.hideMobile) setShowSidebar(false)
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+    window.addEventListener('sidebar:set', handler as EventListener)
+    return () => window.removeEventListener('sidebar:set', handler as EventListener)
+  }, [])
+
   // Disable Three.js shader error checking when Three is available (silence warnings)
   useEffect(() => {
     const disableOnce = () => {
@@ -115,7 +133,7 @@ export default function ClientShell({ children }: { children: React.ReactNode })
         </header>
 
         <main className="">
-          <div className="max-w-6xl mx-auto">{children}</div>
+          <div className="">{children}</div>
         </main>
       </div>
     </div>
@@ -133,6 +151,7 @@ function HeaderTitle() {
       '/upload': 'Upload',
       '/reports': 'Reports',
       '/settings': 'Settings',
+      '/combine': 'Combine & Merge',
     }
     if (map[pathname]) return map[pathname]
 

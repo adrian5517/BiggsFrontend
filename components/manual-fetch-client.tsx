@@ -135,7 +135,7 @@ const css = `
   border-radius: 20px;
   background: rgba(232,168,32,0.15);
   color: var(--gold-light, #f0bc44);
-  border: 1px solid rgba(232,168,32,0.25);
+  border: 1px solid rgba(81, 58, 7, 0.25);
   flex-shrink: 0;
 }
 
@@ -735,7 +735,7 @@ export default function ManualFetchClient() {
               <div className="mfc-title">Manual Fetch</div>
               <div className="mfc-subtitle">Trigger a date-scoped data pull</div>
             </div>
-            <span className="mfc-badge">Admin</span>
+           
           </div>
           <div className="mfc-header-right">
             {live && (

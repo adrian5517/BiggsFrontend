@@ -7,6 +7,7 @@ import ToastProvider, { useToast } from "@/components/ToastProvider";
 import LoginLayout from "@/components/login-layout";
 import ManualFetchClient from "@/components/manual-fetch-client";
 import MissingScanClient from "@/components/missing-scan-client";
+import CombineClient from "@/components/combine-client";
 import AdminRetentionPanel from "@/components/AdminRetentionPanel";
 import useDashboardStats from "@/hooks/useDashboardStats";
 
@@ -43,8 +44,8 @@ const css = `
   --shadow-sm:  0 2px 6px rgba(15,31,61,0.06), 0 1px 2px rgba(15,31,61,0.04);
   --shadow-md:  0 4px 16px rgba(15,31,61,0.08), 0 1px 4px rgba(15,31,61,0.05);
 
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-ui:      'DM Sans', sans-serif;
+  --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui:      'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:    'DM Mono', monospace;
   --t:            220ms cubic-bezier(0.4,0,0.2,1);
   --radius:       12px;
@@ -431,6 +432,16 @@ function DashboardContent() {
           <div className="dash-main-grid">
             <ManualFetchClient />
             <MissingScanClient />
+          </div>
+
+          {/* Combine tools */}
+          <div className="dash-section-label" style={{ marginTop: "28px" }}>
+            <span>Merge & Combine</span>
+            <div className="dash-section-rule" />
+          </div>
+
+          <div style={{ marginBottom: "22px" }}>
+            <CombineClient />
           </div>
 
           {/* Retention */}
