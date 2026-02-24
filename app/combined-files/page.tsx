@@ -5,9 +5,10 @@ import React, { useEffect, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const KNOWN_BRANCHES = [
-  "AYALA-FRN", "B-CPOL", "B-SMS", "BMC", "BRLN", "BPAG",
-  "CAMALIG", "CNTRO", "EME", "GOA", "IRIGA", "MAGS",
-  "OLA", "PACML", "SANPILI", "SIPOCOT", "SMLIP", "SMNAG", "ROXAS"
+  "AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG",
+  "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", 
+  "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", 
+  "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"
 ];
 const KNOWN_BRANCH_SET = new Set(KNOWN_BRANCHES);
 
@@ -55,23 +56,45 @@ function parseCsvTable(csvText: string) {
 
 export default function CombinedFilesPage() {
   const [files, setFiles] = useState<any[]>([]);
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [listPage, setListPage] = useState(1);
+  const [listLimit] = useState(20);
+  const [listBranchFilter, setListBranchFilter] = useState("");
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [content, setContent] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [modalSearchInput, setModalSearchInput] = useState("");
   const [modalBranchInput, setModalBranchInput] = useState("");
+  const [modalPage, setModalPage] = useState(1);
+  const modalPageSize = 200;
 
   async function load() {
-    const res = await fetch(`${API_BASE}/api/files/combined`);
+    const query = new URLSearchParams({
+      page: String(listPage),
+      limit: String(listLimit),
+    });
+
+    if (listBranchFilter) {
+      query.set("branch", listBranchFilter);
+    }
+
+    const res = await fetch(`${API_BASE}/api/files/combined?${query.toString()}`);
     if (!res.ok) return;
     const data = await res.json();
+    setTotalFiles(Number(data.total || 0));
+    setAvailableBranches(Array.isArray(data.branches) ? data.branches : []);
     setFiles(Array.isArray(data.files) ? data.files : []);
   }
 
   useEffect(() => {
     load();
-  }, []);
+  }, [listPage, listLimit, listBranchFilter]);
+
+  useEffect(() => {
+    setModalPage(1);
+  }, [modalSearchInput, modalBranchInput, selected?.path]);
 
   async function openPreview(file: any) {
     setSelected(file);
@@ -134,7 +157,27 @@ export default function CombinedFilesPage() {
     });
   }
 
-  const modalBranches = Array.from(new Set([...KNOWN_BRANCHES, ...Array.from(modalBranchSet)])).sort();
+  const modalBranches = Array.from(modalBranchSet).sort();
+
+  const doesRowMatchBranch = (row: string[], selectedBranch: string) => {
+    const normalizedSelected = cleanCell(selectedBranch).toUpperCase();
+    if (!normalizedSelected) return true;
+
+    const matchesCell = (cell: any) => {
+      const cleaned = cleanCell(cell).toUpperCase();
+      if (!cleaned) return false;
+      if (cleaned === normalizedSelected) return true;
+      if (cleaned.includes(normalizedSelected)) return true;
+      const tokens = cleaned.split(/[^A-Z0-9-]+/).filter(Boolean);
+      return tokens.includes(normalizedSelected);
+    };
+
+    if (branchIndex >= 0) {
+      return matchesCell(row[branchIndex]);
+    }
+
+    return row.some((cell) => matchesCell(cell));
+  };
 
   const filteredRows = rows.filter((row) => {
     const selectedBranch = cleanCell(modalBranchInput).toUpperCase();
@@ -147,16 +190,7 @@ export default function CombinedFilesPage() {
     }
 
     // Check if row matches selected branch
-    let matchesBranch = false;
-    if (branchIndex >= 0) {
-      const branchCell = cleanCell(row[branchIndex]).toUpperCase();
-      if (branchCell === selectedBranch) {
-        matchesBranch = true;
-      }
-    } else {
-      // If branch column not found, search in all cells
-      matchesBranch = row.some((cell) => cleanCell(cell).toUpperCase() === selectedBranch);
-    }
+    const matchesBranch = doesRowMatchBranch(row, selectedBranch);
 
     if (!matchesBranch) return false;
 
@@ -165,6 +199,15 @@ export default function CombinedFilesPage() {
     const needle = modalSearchInput.toLowerCase();
     return row.some((cell) => cleanCell(cell).toLowerCase().includes(needle));
   });
+
+  const listTotalPages = Math.max(1, Math.ceil(totalFiles / listLimit));
+  const listStart = totalFiles === 0 ? 0 : (listPage - 1) * listLimit + 1;
+  const listEnd = totalFiles === 0 ? 0 : Math.min(listPage * listLimit, totalFiles);
+
+  const modalTotalPages = Math.max(1, Math.ceil(filteredRows.length / modalPageSize));
+  const modalStart = filteredRows.length === 0 ? 0 : (modalPage - 1) * modalPageSize + 1;
+  const modalEnd = filteredRows.length === 0 ? 0 : Math.min(modalPage * modalPageSize, filteredRows.length);
+  const pagedFilteredRows = filteredRows.slice((modalPage - 1) * modalPageSize, modalPage * modalPageSize);
 
   return (
     <div className="p-6 space-y-6">
@@ -181,6 +224,44 @@ export default function CombinedFilesPage() {
       <div>
         <h1 className="text-2xl font-semibold">Combined Files</h1>
         <p className="text-sm text-slate-500">Separate page for combiner outputs (different from Masterfile).</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={listBranchFilter}
+          onChange={(e) => {
+            setListBranchFilter(e.target.value);
+            setListPage(1);
+          }}
+          className="border p-2 rounded w-56 text-sm"
+        >
+          <option value="">All branches</option>
+          {availableBranches.map((branch) => (
+            <option key={branch} value={branch}>{branch}</option>
+          ))}
+        </select>
+        <span className="text-sm text-slate-600">
+          {totalFiles === 0 ? "No records" : `Showing ${listStart}-${listEnd} of ${totalFiles}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="px-3 py-1 rounded border text-sm disabled:opacity-40"
+            onClick={() => setListPage((previous) => Math.max(1, previous - 1))}
+            disabled={listPage <= 1}
+          >
+            Prev
+          </button>
+          <span className="text-sm text-slate-600">Page {listPage} / {listTotalPages}</span>
+          <button
+            type="button"
+            className="px-3 py-1 rounded border text-sm disabled:opacity-40"
+            onClick={() => setListPage((previous) => Math.min(listTotalPages, previous + 1))}
+            disabled={listPage >= listTotalPages}
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto border rounded-lg bg-white">
@@ -245,7 +326,7 @@ export default function CombinedFilesPage() {
                   className="border p-2 rounded w-56 text-black"
                 >
                   <option value="">All branches</option>
-                  {modalBranches.map((b) => (
+                  {(modalBranches.length ? modalBranches : KNOWN_BRANCHES).map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
@@ -254,10 +335,31 @@ export default function CombinedFilesPage() {
                   onClick={() => {
                     setModalSearchInput("");
                     setModalBranchInput("");
+                    setModalPage(1);
                   }}
                 >
                   Select All
                 </button>
+                <div className="ml-auto flex items-center gap-2 text-sm text-slate-700">
+                  <span>{filteredRows.length === 0 ? "No rows" : `Showing ${modalStart}-${modalEnd} of ${filteredRows.length}`}</span>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded border bg-white disabled:opacity-40"
+                    onClick={() => setModalPage((previous) => Math.max(1, previous - 1))}
+                    disabled={modalPage <= 1}
+                  >
+                    Prev
+                  </button>
+                  <span>Page {modalPage} / {modalTotalPages}</span>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded border bg-white disabled:opacity-40"
+                    onClick={() => setModalPage((previous) => Math.min(modalTotalPages, previous + 1))}
+                    disabled={modalPage >= modalTotalPages}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -274,7 +376,7 @@ export default function CombinedFilesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRows.slice(0, 1000).map((row, rowIndex) => (
+                    {pagedFilteredRows.map((row, rowIndex) => (
                       <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"}>
                         {headers.map((_, colIndex) => (
                           <td key={`${rowIndex}-${colIndex}`} className="p-2 text-xs font-mono text-slate-700 border-b align-top">

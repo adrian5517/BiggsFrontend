@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { fetchWithAuth, getAccessToken } from "@/utils/auth";
+import { fetchWithAuth } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
-const MOCK_BRANCHES = ["ATL-001", "CHI-002", "DAL-003", "HOU-004", "LAX-005", "NYC-006", "PHX-007", "SEA-008"];
+const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
+const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
 
 /* ─────────────────────────── CSS ─────────────────────────── */
 const css = `
@@ -451,13 +452,45 @@ const css = `
 /* Result panel ── light body ── */
 .msc-result-body {
   background: var(--surface-2);
-  height: 230px;
-  overflow-y: auto;
+  max-height: 600px;
+  overflow: auto;
   padding: 14px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-md) transparent;
 }
 .msc-result-body .msc-panel-bar { background: var(--navy); }
+.msc-result-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.msc-result-body table thead tr {
+  background: linear-gradient(180deg, rgba(15,31,61,0.4), rgba(15,31,61,0.2));
+  border-bottom: 1px solid rgba(77,182,232,0.15);
+}
+.msc-result-body table th {
+  padding: 10px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #60c8ff;
+  letter-spacing: 0.05em;
+  text-transform: capitalize;
+}
+.msc-result-body table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s ease;
+}
+.msc-result-body table tbody tr:hover {
+  background: rgba(77,182,232,0.06);
+}
+.msc-result-body table td {
+  padding: 10px 8px;
+  color: var(--text-secondary);
+}
+.msc-result-body table tbody tr td {
+  vertical-align: middle;
+}
 .msc-result-pre {
   font-family: var(--font-mono); font-size: 11.5px;
   color: var(--text-secondary); white-space: pre-wrap;
@@ -528,9 +561,15 @@ const Ico = {
       <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
     </svg>
   ),
+  Upload: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="11" height="11">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  ),
 };
 
-/* ─────────────────────────── Hooks ─────────────────────────── */
 function useBranches() {
   const [branches, setBranches] = useState<string[]>([]);
   useEffect(() => {
@@ -540,93 +579,182 @@ function useBranches() {
         if (!res.ok) { setBranches(MOCK_BRANCHES); return; }
         const data = await res.json();
         setBranches(data?.branches?.length ? data.branches : MOCK_BRANCHES);
-      } catch { setBranches(MOCK_BRANCHES); }
+      } catch {
+        setBranches(MOCK_BRANCHES);
+      }
     })();
   }, []);
   return branches;
 }
 
-/* ─────────────────────────── Sub-components ─────────────────────────── */
-function ConsoleMessage({ m }: { m: any }) {
-  const typeMap: Record<string, string> = {
-    queued: "t-queued", progress: "t-message", complete: "t-complete",
-    error: "t-error", "sse-error": "t-sse-error", stopped: "t-stopped",
-    "scan-start": "t-scan-start", "scan-result": "t-scan-result",
-    message: "t-message",
-  };
-  const cls = typeMap[m?.type ?? ""] ?? "t-default";
-  return (
-    <div className="msc-msg">
-      <div className={`msc-msg-type ${cls}`}><span style={{ opacity: 0.4 }}>▶</span> {m.type ?? "raw"}</div>
-      <pre className="msc-msg-pre">{JSON.stringify(m, null, 2)}</pre>
-      <hr className="msc-msg-hr" />
-    </div>
-  );
-}
-
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export default function MissingScanClient() {
   const branches = useBranches();
-  const [selected, setSelected] = useState<string[]>([]);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [positions, setPositions] = useState("1,2");
-  const [sampleFile, setSampleFile] = useState("");
-  const [autoQueue, setAutoQueue] = useState(false);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [positions] = useState("1,2");
+  const [messages, setMessages] = useState<string[]>([]);
   const [scanResult, setScanResult] = useState<any>(null);
+  const [tableSearch, setTableSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [progressValue, setProgressValue] = useState(0);
   const [live, setLive] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
-  const consoleRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-  }, [messages]);
-
-  const allSel = branches.length > 0 && selected.length === branches.length;
-  const toggle = (b: string) => setSelected(sel => sel.includes(b) ? sel.filter(x => x !== b) : [...sel, b]);
+  const [queueing, setQueueing] = useState(false);
+  const [reingesting, setReingesting] = useState(false);
+  const [queueStatus, setQueueStatus] = useState("");
+  const itemsPerPage = 10;
 
   const handleStartScan = async () => {
-    const body: any = {};
-    if (selected.length) body.branches = selected;
-    if (positions) body.positions = positions;
+    const body: any = { positions };
+    if (branches.length) body.branches = branches;
     if (start) body.start = start;
     if (end) body.end = end;
-    if (sampleFile) body.sampleFile = sampleFile;
-    if (autoQueue) body.autoQueue = true;
 
-    setMessages(m => [...m, { type: "scan-start", body }]);
+    setLive(true);
+    setProgressValue(20);
+    setMessages(m => [...m, `Scan started (${branches.length} branches)`]);
+    setMessages(m => [...m, `Date range: ${start || "auto"} to ${end || "auto"}`]);
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
+      setProgressValue(65);
       const json = await resp.json();
       if (!resp.ok) {
-        setMessages(m => [...m, { type: "error", message: json?.message ?? "Scan failed" }]);
+        setMessages(m => [...m, `Error: ${json?.message ?? 'Scan failed'}`]);
+        setProgressValue(0);
+        setLive(false);
         return;
       }
-      setScanResult(json);
-      setMessages(m => [...m, { type: "scan-result", json }]);
 
-      // Scan is read-only in this handler: we display results only and do not
-      // open EventSource/SSE here. Use the explicit "Queue Missing Fetches"
-      // action to start ingestion and open SSE for job progress.
+      setScanResult(json);
+      setCurrentPage(1);
+      setMessages(m => [...m, `Scan complete: ${json?.results?.length || 0} rows generated`]);
+      setMessages(m => [...m, `Date range: ${json?.start || 'N/A'} to ${json?.end || 'N/A'}`]);
+      setProgressValue(100);
+      setLive(false);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(MISSING_SCAN_RESULT_KEY, JSON.stringify(json));
+        window.dispatchEvent(new CustomEvent("missing-scan-result", { detail: json }));
+      }
     } catch (e) {
-      setMessages(m => [...m, { type: 'error', message: String(e) }]);
+      setMessages(m => [...m, `Error: ${String(e)}`]);
+      setProgressValue(0);
+      setLive(false);
     }
   };
 
-    const handleStop = () => {
-      if (esRef.current) {
-        try { esRef.current.close(); } catch (e) {}
-        esRef.current = null;
+  const handleStop = () => {
+    setMessages(m => [...m, "Stopped by user"]);
+    setProgressValue(0);
+    setLive(false);
+  };
+
+  const handleQueueFetchScan = async () => {
+    if (!scanResult || !scanResult.results || scanResult.results.length === 0) {
+      setQueueStatus("No scan results to queue.");
+      return;
+    }
+    if (!scanResult.snapshotId) {
+      setQueueStatus("Snapshot not found. Run scan again, then queue.");
+      return;
+    }
+
+    setQueueing(true);
+    setQueueStatus(`Queuing fetch for missing dates (${scanResult.start || 'auto'} to ${scanResult.end || 'auto'})...`);
+
+    try {
+      const body: any = {
+        autoQueue: true,
+        snapshotId: scanResult.snapshotId,
+      };
+
+      // Optional filters for this queue action while keeping same snapshot
+      if (branches.length) {
+        body.branches = branches;
       }
-      setMessages(m => [...m, { type: 'stopped' }]);
-      setLive(false);
-    };
+      if (positions.length) body.positions = positions;
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const json = await resp.json();
+      if (!resp.ok) {
+        setQueueStatus(`Error: ${json?.message ?? 'Queue failed'}`);
+        setQueueing(false);
+        return;
+      }
+
+      setQueueStatus(`✅ Queued successfully! Job ID: ${json.jobId || 'N/A'}`);
+      // Add helpful message about re-scanning
+      setTimeout(() => {
+        setQueueStatus("💡 Tip: Run scan again after fetch completes to see updated results.");
+      }, 3000);
+      setTimeout(() => setQueueStatus(""), 10000);
+    } catch (e) {
+      setQueueStatus(`Error: ${String(e)}`);
+    } finally {
+      setQueueing(false);
+    }
+  };
+
+  const handleReIngest = async () => {
+    if (!scanResult || !scanResult.results || scanResult.results.length === 0) {
+      setQueueStatus("No scan results to re-ingest.");
+      return;
+    }
+    if (!scanResult.start || !scanResult.end) {
+      setQueueStatus("Missing scan date range. Run scan again before re-ingest.");
+      return;
+    }
+
+    setReingesting(true);
+    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end})...`);
+
+    try {
+      const body: any = {
+        start: scanResult.start,
+        end: scanResult.end,
+        mode: 're-ingest-missing-scan',
+      };
+
+      if (branches.length) {
+        body.branches = branches;
+      } else if (scanResult.results && scanResult.results.length) {
+        body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
+      }
+
+      if (positions.length) {
+        body.positions = positions;
+      } else if (scanResult.results && scanResult.results.length) {
+        body.positions = [...new Set(scanResult.results.map((r: any) => String(r.pos)))];
+      }
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const json = await resp.json();
+      if (!resp.ok) {
+        setQueueStatus(`Re-ingest failed: ${json?.message ?? 'Request failed'}`);
+        return;
+      }
+
+      setQueueStatus(`✅ Re-ingest queued! Job ID: ${json?.jobId || 'N/A'}. Check Fetch Logs for progress.`);
+    } catch (e) {
+      setQueueStatus(`Re-ingest failed: ${String(e)}`);
+    } finally {
+      setReingesting(false);
+    }
+  };
 
   return (
     <div className="msc-root">
@@ -638,19 +766,17 @@ export default function MissingScanClient() {
             <div className="msc-icon-wrap"><Ico.Scan /></div>
             <div>
               <div className="msc-title">Missing Scan</div>
-              <div className="msc-subtitle">Inspect & queue missing records</div>
+              <div className="msc-subtitle">Read-only scan controls for dashboard</div>
             </div>
-            
           </div>
           <div className="msc-header-right">
             {live && <span className="msc-live"><span className="msc-live-dot" />Live</span>}
+            <span className="msc-badge">READ ONLY</span>
           </div>
           <div className="msc-header-stripe" />
         </div>
 
-        {/* Body */}
         <div className="msc-body">
-          {/* Date range */}
           <div className="msc-date-row">
             <div className="msc-field">
               <label className="msc-label"><span className="msc-label-icon"><Ico.Calendar /></span>Start Date</label>
@@ -663,168 +789,206 @@ export default function MissingScanClient() {
           </div>
 
           <hr className="msc-divider" />
+          <div className="msc-branch-count">All branches are selected by default ({branches.length})</div>
 
-          {/* Branches */}
-          <div className="msc-section-head">
-            <span className="msc-section-left">
-              <span className="msc-section-icon"><Ico.Git /></span>
-              Branches
-            </span>
-            <label className="msc-select-all">
-              <input type="checkbox" checked={allSel} onChange={e => setSelected(e.target.checked ? branches.slice() : [])} />
-              Select all
-            </label>
-          </div>
-
-          <div className="msc-branch-list">
-            {branches.length === 0
-              ? <div className="msc-branch-empty">Loading branches…</div>
-              : branches.map(b => {
-                  const sel = selected.includes(b);
-                  return (
-                    <div key={b} className={`msc-branch-row ${sel ? "sel" : ""}`} onClick={() => toggle(b)}>
-                      <div className="msc-branch-cb">{sel && "✓"}</div>
-                      <span className="msc-branch-name">{b}</span>
-                    </div>
-                  );
-                })
-            }
-          </div>
-          {selected.length > 0 && (
-            <div className="msc-branch-count">{selected.length} of {branches.length} selected</div>
-          )}
-
-          <hr className="msc-divider" />
-
-          {/* Options */}
-          <div className="msc-options-row">
+          <div className="msc-options-row" style={{ marginTop: 0 }}>
             <div className="msc-field">
-              <label className="msc-label"><span className="msc-label-icon"><Ico.Hash /></span>Positions</label>
-              <input className="msc-input" value={positions} onChange={e => setPositions(e.target.value)} placeholder="1,2" />
-            </div>
-            <div className="msc-field">
-              <label className="msc-label"><span className="msc-label-icon"><Ico.File /></span>Sample File <span style={{ fontSize: 9, opacity: 0.5, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
-              <input className="msc-input" value={sampleFile} onChange={e => setSampleFile(e.target.value)} placeholder="latest/BRANCH/2026-02-01/sample.csv" />
+              <label className="msc-label"><span className="msc-label-icon"><Ico.Hash /></span>Position</label>
+              <input className="msc-input" value={positions} readOnly />
             </div>
           </div>
 
-          {/* Auto-queue toggle */}
-          {/* Note: Auto-queue removed. Scans are read-only and only display results.
-              Use the explicit "Queue Missing Fetches" button to start ingestion. */}
-
-          {/* Summary chips */}
-          {(selected.length > 0 || start || end || positions) && (
-            <div className="msc-chips">
-              {selected.length > 0 && (
-                <span className="msc-chip chip-sky">
-                  <Ico.Git /> {selected.length} branch{selected.length > 1 ? "es" : ""}
-                </span>
-              )}
-              {(start || end) && (
-                <span className="msc-chip chip-date">
-                  <Ico.Calendar /> {start || "…"} <Ico.Arrow /> {end || "now"}
-                </span>
-              )}
-              {positions && (
-                <span className="msc-chip chip-red"><Ico.Hash /> {positions}</span>
-              )}
-              {autoQueue && (
-                <span className="msc-chip" style={{ background: "rgba(77,182,232,0.07)", color: "var(--sky)", border: "1px solid rgba(77,182,232,0.18)" }}>
-                  ⚡ auto-queue
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Actions */}
           <div className="msc-actions">
-            <button className="msc-btn msc-btn-sky" onClick={handleStartScan} disabled={live}>
-              <Ico.Play /> {live ? "Scanning…" : "Start Scan"}
+            <button className="msc-btn msc-btn-sky" onClick={handleStartScan}>
+              <Ico.Play /> Start Scan
             </button>
             <button className="msc-btn msc-btn-ghost" onClick={handleStop}>
-              <Ico.Square /> Stop
+              <Ico.Square /> Stop Scan
             </button>
-            <button
-              className="msc-btn msc-btn-primary"
-              onClick={async () => {
-                // Explicitly queue missing fetches by re-calling scan endpoint with autoQueue=true
-                const body: any = {};
-                if (selected.length) body.branches = selected;
-                if (positions) body.positions = positions;
-                if (start) body.start = start;
-                if (end) body.end = end;
-                if (sampleFile) body.sampleFile = sampleFile;
-                body.autoQueue = true;
-                setMessages(m => [...m, { type: 'scan-start', body }]);
-                try {
-                  const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-                  });
-                  const json = await resp.json();
-                  if (!resp.ok) { setMessages(m => [...m, { type: 'error', message: json?.message ?? 'Queue failed' }]); return; }
-                  setScanResult(json);
-                  setMessages(m => [...m, { type: 'scan-result', json }]);
-                  if (json.queued && json.jobId) {
-                    setLive(true);
-                    const token = getAccessToken();
-                    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ''))}` : '';
-                    const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(json.jobId)}${tq}`;
-                    if (esRef.current) esRef.current.close();
-                    const es = new EventSource(url);
-                    esRef.current = es;
-                    es.onopen = () => setMessages(m => [...m, { type: 'sse-open', message: `Connected to ${url}` }]);
-                    es.onmessage = ev => {
-                      try { const d = JSON.parse(ev.data); setMessages(m => [...m, d]); if (d.type === 'complete' || d.type === 'error') { es.close(); setLive(false); } }
-                      catch { setMessages(m => [...m, { type: 'sse-raw', data: ev.data }]); }
-                    };
-                    es.onerror = async (err) => {
-                      setMessages(m => [...m, { type: 'sse-error', message: 'EventSource error', detail: String(err) }]);
-                      try { const resp2 = await fetchWithAuth(url, { method: 'GET' }); const txt = await resp2.text().catch(() => null); setMessages(m => [...m, { type: 'sse-error-diagnostic', status: resp2.status, body: txt }]); } catch (e) { setMessages(m => [...m, { type: 'sse-error-diagnostic', error: String(e) }]); }
-                      try { es.close(); } catch (e) {}
-                      setLive(false);
-                    };
-                  }
-                } catch (e) { setMessages(m => [...m, { type: 'error', message: String(e) }]); }
-              }}
-            >
-              Queue Missing Fetches
-            </button>
+            {messages.length > 0 && (
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                alignSelf: 'center'
+              }}>
+                {messages.length} line{messages.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
+        </div>
 
-          {/* Output panels */}
-          <div className="msc-output-grid">
-            {/* Console */}
-            <div className="msc-panel">
-              <div className="msc-panel-bar">
-                <span className="msc-panel-title">
-                  <span className={`msc-panel-dot ${live ? "live" : ""}`} />
-                  <Ico.Terminal /> Console
-                </span>
-                <span className="msc-panel-count">{messages.length} events</span>
+        <div className="msc-output-grid" style={{ padding: "14px", gridTemplateColumns: "1fr", gap: "14px" }}>
+          <div className="msc-panel">
+            <div className="msc-panel-bar">
+              <span className="msc-panel-title">
+                <span className={`msc-panel-dot ${live ? "live" : ""}`} />
+                <Ico.Terminal /> Scan Progress
+              </span>
+            </div>
+            <div className="msc-result-body" style={{ maxHeight: "clamp(180px, 26vh, 230px)", padding: "10px" }}>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  <span>Status</span>
+                  <span>{progressValue}%</span>
+                </div>
+                <div style={{ width: "100%", height: "10px", background: "rgba(15,31,61,0.08)", borderRadius: "999px", overflow: "hidden" }}>
+                  <div style={{ width: `${progressValue}%`, height: "100%", background: "linear-gradient(90deg, var(--sky), var(--red))", transition: "width 220ms ease" }} />
+                </div>
               </div>
-              <div className="msc-panel-body" ref={consoleRef}>
-                {messages.length === 0
-                  ? <div className="msc-panel-empty"><Ico.Terminal /><span>Awaiting output…</span></div>
-                  : messages.map((m, i) => <ConsoleMessage key={i} m={m} />)
-                }
+
+              <div style={{ border: "1px solid var(--border)", borderRadius: "8px", background: "#fff", minHeight: "clamp(110px, 16vh, 145px)", maxHeight: "clamp(110px, 16vh, 145px)", overflowY: "auto" }}>
+                {messages.length === 0 ? (
+                  <div className="msc-panel-empty" style={{ color: "var(--text-faint)", minHeight: "clamp(110px, 16vh, 145px)" }}>
+                    <Ico.Terminal /><span>Start scan to see progress lines…</span>
+                  </div>
+                ) : (
+                  <div style={{ padding: "10px" }}>
+                    {messages.map((line, index) => (
+                      <div key={index} style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)", padding: "6px 0", borderBottom: index === messages.length - 1 ? "none" : "1px solid var(--border)" }}>
+                        • {line}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
+          </div>
 
-            {/* Scan Result */}
-            <div className="msc-panel">
-              <div className="msc-panel-bar">
-                <span className="msc-panel-title">
-                  <span className="msc-panel-dot" style={{ background: scanResult ? "#4ade80" : undefined }} />
-                  <Ico.Results /> Scan Result
-                </span>
-                {scanResult && <span className="msc-panel-count">ready</span>}
+          <div className="msc-panel">
+            <div className="msc-panel-bar">
+              <span className="msc-panel-title">
+                <span className="msc-panel-dot" style={{ background: scanResult ? "#4ade80" : undefined }} />
+                <Ico.Results /> Scan Results
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {scanResult && <span className="msc-panel-count">{scanResult.results?.length || 0} rows</span>}
+                {scanResult && scanResult.results && scanResult.results.length > 0 && (
+                  <button
+                    className="msc-btn msc-btn-gold"
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                    onClick={handleReIngest}
+                    disabled={reingesting || queueing}
+                  >
+                    <Ico.Play />
+                    {reingesting ? 'Re-ingesting...' : 'Re-ingest'}
+                  </button>
+                )}
+                {scanResult && scanResult.results && scanResult.results.length > 0 && (
+                  <button
+                    className="msc-btn msc-btn-sky"
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                    onClick={handleQueueFetchScan}
+                    disabled={queueing || reingesting}
+                  >
+                    <Ico.Play />
+                    {queueing ? 'Queuing...' : 'Queue Fetch Scan'}
+                  </button>
+                )}
               </div>
-              <div className="msc-result-body">
-                {scanResult
-                  ? <pre className="msc-result-pre">{JSON.stringify(scanResult, null, 2)}</pre>
-                  : <div className="msc-result-empty"><Ico.Results /><span>No result yet</span></div>
-                }
+            </div>
+            {queueStatus && (
+              <div style={{ padding: '8px 12px', background: queueStatus.includes('✅') ? 'var(--gold-muted)' : queueStatus.includes('💡') ? 'var(--sky-muted)' : 'var(--red-muted)', color: 'var(--navy)', fontSize: '11px', borderBottom: '1px solid var(--sky-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>{queueStatus}</span>
+                {queueStatus.includes('💡') && (
+                  <button
+                    className="msc-btn msc-btn-gold"
+                    style={{ padding: '4px 10px', fontSize: '10px' }}
+                    onClick={handleStartScan}
+                  >
+                    <Ico.Play /> Re-scan Now
+                  </button>
+                )}
               </div>
+            )}
+            {scanResult && scanResult.results && scanResult.results.length > 0 && (
+              <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                Tip: Use <strong>Queue Fetch Scan</strong> for missing files. Use <strong>Re-ingest</strong> only when files already exist but processing failed/wrong.
+              </div>
+            )}
+            <div className="msc-result-body" style={{ maxHeight: "760px", overflowY: "auto" }}>
+              {scanResult && scanResult.results && scanResult.results.length > 0 ? (
+                <>
+                  <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Filter by branch..."
+                      value={tableSearch}
+                      onChange={e => {
+                        setTableSearch(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="msc-input"
+                    />
+                  </div>
+
+                  {(() => {
+                    const filtered = scanResult.results.filter((r: any) =>
+                      String(r.branch || "").toLowerCase().includes(tableSearch.toLowerCase())
+                    );
+                    const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
+                    const startIdx = (currentPage - 1) * itemsPerPage;
+                    const paginated = filtered.slice(startIdx, startIdx + itemsPerPage);
+
+                    return (
+                      <>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', fontFamily: 'monospace' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(15,31,61,0.03)' }}>
+                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Branch</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Pos</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing Dates</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paginated.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)' }}>No matching rows</td>
+                              </tr>
+                            ) : paginated.map((r: any, i: number) => (
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(15,31,61,0.02)' }}>
+                                <td style={{ padding: '8px 6px', color: 'var(--text-primary)', fontWeight: 600 }}>{r.branch}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'center', color: 'var(--text-secondary)' }}>{r.pos}</td>
+                                <td style={{ padding: '8px 6px', textAlign: 'center', color: 'var(--red)', fontWeight: 700 }}>{r.missingDates?.length || 0}</td>
+                                <td style={{ padding: '8px 6px', color: 'var(--text-secondary)', minWidth: '240px' }}>
+                                  {r.missingDates && r.missingDates.length > 0 ? (
+                                    <details style={{ cursor: 'pointer' }}>
+                                      <summary style={{ cursor: 'pointer', color: 'var(--red)', fontSize: '11px' }}>
+                                        {r.missingDates.slice(0, 2).join(', ')}{r.missingDates.length > 2 ? ` +${r.missingDates.length - 2} more` : ''}
+                                      </summary>
+                                      <div style={{ marginTop: '6px', maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '6px', padding: '6px', background: '#fff' }}>
+                                        {r.missingDates.map((date: string, idx: number) => (
+                                          <div key={idx} style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                                            {date}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </details>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>None</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          <span>{filtered.length === 0 ? 0 : startIdx + 1}–{Math.min(startIdx + itemsPerPage, filtered.length)} of {filtered.length}</span>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="msc-btn msc-btn-ghost" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Prev</button>
+                            <button className="msc-btn msc-btn-ghost" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Next</button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <div className="msc-result-empty"><Ico.Results /><span>No result yet</span></div>
+              )}
             </div>
           </div>
         </div>

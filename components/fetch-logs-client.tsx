@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
-import auth, { getAccessToken as _getAccessToken } from '@/utils/auth'
+import React, { useEffect, useMemo, useState } from 'react'
+import auth from '@/utils/auth'
 import Table, { TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+const DEFAULT_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"]
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Sora:wght@300;400;500;600&display=swap');
@@ -375,9 +376,6 @@ const styles = `
   .fl-modal-body {
     padding: 24px;
     overflow: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
   }
 
   .fl-panel {
@@ -412,7 +410,7 @@ const styles = `
     font-size: 0.72rem;
     line-height: 1.6;
     overflow: auto;
-    max-height: 340px;
+    max-height: 55vh;
     color: var(--ink-muted);
     white-space: pre-wrap;
     word-break: break-all;
@@ -420,7 +418,7 @@ const styles = `
 
   .fl-preview-table { width: 100%; border-collapse: collapse; }
   .fl-preview-table th, .fl-preview-table td {
-    padding: 6px 10px;
+    padding: 8px 12px;
     text-align: left;
     font-size: 0.7rem;
     font-family: 'DM Mono', monospace;
@@ -428,7 +426,7 @@ const styles = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 120px;
+    max-width: 200px;
   }
   .fl-preview-table th {
     font-weight: 600;
@@ -536,10 +534,12 @@ export default function FetchLogsClient() {
   const [filterBranch, setFilterBranch] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
+  const [quickSearch, setQuickSearch] = useState<string>('')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalItem, setModalItem] = useState<any>(null)
   const [previewRows, setPreviewRows] = useState<any[]>([])
+  const [modalType, setModalType] = useState<'preview' | 'details'>('preview')
 
   useEffect(() => { load() }, [page])
   useEffect(() => { loadBranches() }, [])
@@ -547,10 +547,17 @@ export default function FetchLogsClient() {
   async function loadBranches() {
     try {
       const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/branches`)
-      if (!res.ok) return
+      if (!res.ok) { setBranches(DEFAULT_BRANCHES); return }
       const data = await res.json().catch(() => null)
-      if (Array.isArray(data)) setBranches(data.map(String))
-    } catch (e) { console.warn('loadBranches', e) }
+      const values = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.branches) ? data.branches : [])
+      if (values.length) setBranches(values.map(String))
+      else setBranches(DEFAULT_BRANCHES)
+    } catch (e) {
+      console.warn('loadBranches', e)
+      setBranches(DEFAULT_BRANCHES)
+    }
   }
 
   async function load() {
@@ -562,11 +569,17 @@ export default function FetchLogsClient() {
       if (filterBranch) q.set('branch', filterBranch)
       if (startDate) q.set('startDate', startDate)
       if (endDate) q.set('endDate', endDate)
+      if (quickSearch.trim()) q.set('search', quickSearch.trim())
       const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/files?${q.toString()}`)
       if (!res.ok) throw new Error(`Failed: ${res.status}`)
       const data = await res.json().catch(() => null)
       if (data) {
-        setItems(data.items || [])
+        const normalizedItems = (data.items || []).map((item: any) => ({
+          ...item,
+          sourceFile: item.sourceFile ?? item.source_file,
+          workDate: item.workDate ?? item.work_date,
+        }))
+        setItems(normalizedItems)
         setTotal(Number(data.total || 0))
       }
     } catch (e) {
@@ -574,24 +587,40 @@ export default function FetchLogsClient() {
     } finally { setLoading(false) }
   }
 
-  function viewRaw(id: string) {
-    const token = (_getAccessToken as any)()
-    const url = `${API_BASE}/api/fetch/files/${id}/raw${token ? `?token=${encodeURIComponent(token)}` : ''}`
-    window.open(url, '_blank')
+  async function viewRaw(id: string) {
+    try {
+      const url = `${API_BASE}/api/fetch/files/${id}/raw`
+      const res = await auth.fetchWithAuth(url)
+      if (!res.ok) throw new Error(`Failed raw: ${res.status}`)
+
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `file_${id}.csv`
+      a.click()
+      URL.revokeObjectURL(blobUrl)
+    } catch (e) {
+      console.error('view raw error', e)
+      alert('Failed to download raw file.')
+    }
   }
 
   function viewRows(id: string) {
-    const token = (_getAccessToken as any)()
-    const url = `${API_BASE}/api/fetch/files/${id}/rows?limit=200${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    const url = `${API_BASE}/api/fetch/files/${id}/rows?limit=200`;
     (async () => {
       try {
-        console.debug('fetch-logs preview URL', url, 'token=', token ? 'yes' : 'no')
+        console.debug('fetch-logs preview URL', url)
         const res = await auth.fetchWithAuth(url)
         if (!res.ok) throw new Error(`Failed rows: ${res.status}`)
         const data = await res.json().catch(() => null)
-        setPreviewRows(Array.isArray(data) ? data : [])
+        const rows = Array.isArray(data)
+          ? data
+          : (Array.isArray(data?.items) ? data.items : [])
+        setPreviewRows(rows)
         const it = items.find((i: any) => String(i._id) === String(id))
         setModalItem(it || null)
+        setModalType('preview')
         setModalOpen(true)
       } catch (e) {
         console.error('preview rows error', e)
@@ -599,15 +628,57 @@ export default function FetchLogsClient() {
     })()
   }
 
-  function closeModal() { setModalOpen(false); setModalItem(null); setPreviewRows([]) }
+  function closeModal() { setModalOpen(false); setModalItem(null); setPreviewRows([]); setModalType('preview') }
+
+  function formatFileSize(value: any) {
+    const bytes = Number(value)
+    if (!Number.isFinite(bytes) || bytes < 0) return '—'
+    if (bytes < 1024) return `${bytes} B`
+
+    const units = ['KB', 'MB', 'GB', 'TB']
+    let size = bytes / 1024
+    let unitIndex = 0
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024
+      unitIndex += 1
+    }
+    return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`
+  }
+
+  function formatSourceFilePath(value: any) {
+    const raw = String(value ?? '').trim()
+    if (!raw) return '—'
+    
+    // Remove URL protocol and host
+    let cleaned = raw.replace(/^https?:\/\/[^/]+\//i, '')
+    
+    // Remove common prefixes
+    cleaned = cleaned.replace(/^data_archive[\\/]+/i, '')
+    cleaned = cleaned.replace(/^local-fallback[\\/]+/i, '')
+    
+    // Extract just the filename (last part after /)
+    const parts = cleaned.split(/[\\/]/)
+    const filename = parts[parts.length - 1]
+    
+    return filename || cleaned
+  }
 
   function exportCSV() {
     if (!items || !items.length) return
-    const cols = ['_id', 'sourceFile', 'branch', 'pos', 'workDate', 'size', 'status']
+    const cols = ['_id', 'source_file', 'branch', 'pos', 'work_date', 'size', 'status']
     const lines = [cols.join(',')]
     for (const it of items) {
       const row = cols.map(c => {
-        const v = it[c] != null ? String(it[c]) : ''
+        const normalized = {
+          _id: it._id,
+          source_file: it.source_file ?? it.sourceFile,
+          branch: it.branch,
+          pos: it.pos,
+          work_date: it.work_date ?? it.workDate,
+          size: it.size,
+          status: it.status,
+        } as any
+        const v = normalized[c] != null ? String(normalized[c]) : ''
         return '"' + v.replace(/"/g, '""') + '"'
       }).join(',')
       lines.push(row)
@@ -622,6 +693,19 @@ export default function FetchLogsClient() {
   }
 
   const totalPages = Math.ceil(total / limit)
+  const filteredItems = useMemo(() => {
+    const needle = quickSearch.trim().toLowerCase()
+    if (!needle) return items
+    return items.filter((it: any) => {
+      const id = String(it._id ?? '')
+      const file = formatSourceFilePath(it.sourceFile ?? it.source_file ?? it.filename ?? it.url ?? '')
+      const branch = String(it.branch ?? '')
+      const workDateRaw = it.work_date || it.workDate
+      const workDate = workDateRaw ? new Date(workDateRaw).toISOString().slice(0, 10) : ''
+      const haystack = `${id} ${file} ${branch} ${workDate}`.toLowerCase()
+      return haystack.includes(needle)
+    })
+  }, [items, quickSearch])
 
   return (
     <>
@@ -661,13 +745,24 @@ export default function FetchLogsClient() {
             <input type="date" className="fl-date-input" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
 
+          <div className="fl-field-group" style={{ minWidth: 220 }}>
+            <div className="fl-label">Quick Search</div>
+            <input
+              type="text"
+              className="fl-date-input"
+              placeholder="ID, file, branch, work date"
+              value={quickSearch}
+              onChange={e => setQuickSearch(e.target.value)}
+            />
+          </div>
+
           <div className="fl-field-group" style={{ justifyContent: 'flex-end' }}>
             <div className="fl-label">&nbsp;</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="fl-btn fl-btn-apply" onClick={() => { setPage(1); load() }}>
                 <Icons.Search /> Apply
               </button>
-              <button className="fl-btn fl-btn-clear" onClick={() => { setFilterBranch(''); setStartDate(''); setEndDate(''); setPage(1); load() }}>
+              <button className="fl-btn fl-btn-clear" onClick={() => { setFilterBranch(''); setStartDate(''); setEndDate(''); setQuickSearch(''); setPage(1); load() }}>
                 <Icons.X /> Clear
               </button>
             </div>
@@ -689,9 +784,23 @@ export default function FetchLogsClient() {
                 if (startDate) q.set('startDate', startDate)
                 if (endDate) q.set('endDate', endDate)
                 q.set('zip', 'true')
-                const token = (_getAccessToken as any)()
-                const url = `${API_BASE}/api/fetch/files/export?${q.toString()}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-                window.open(url, '_blank')
+                const url = `${API_BASE}/api/fetch/files/export?${q.toString()}`
+                ;(async () => {
+                  try {
+                    const res = await auth.fetchWithAuth(url)
+                    if (!res.ok) throw new Error(`Failed export: ${res.status}`)
+                    const blob = await res.blob()
+                    const blobUrl = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = blobUrl
+                    a.download = 'fetch_records.csv.gz'
+                    a.click()
+                    URL.revokeObjectURL(blobUrl)
+                  } catch (e) {
+                    console.error('export gz error', e)
+                    alert('Failed to export gz file.')
+                  }
+                })()
               }}>
                 <Icons.Archive /> All (gz)
               </button>
@@ -706,7 +815,7 @@ export default function FetchLogsClient() {
               <div className="fl-spinner" />
               Loading records…
             </div>
-          ) : items.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="fl-empty">No records found</div>
           ) : (
             <table className="fl-table">
@@ -723,14 +832,14 @@ export default function FetchLogsClient() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it: any) => (
+                {filteredItems.map((it: any) => (
                   <tr key={it._id}>
                     <td>
                       <span className="fl-mono">…{String(it._id).slice(-8)}</span>
                     </td>
                     <td>
-                      <span className="fl-file-path" title={it.sourceFile || it.filename || it.url || ''}>
-                        {it.sourceFile || it.filename || it.url || '—'}
+                      <span className="fl-file-path" title={formatSourceFilePath(it.sourceFile || it.filename || it.url || '')}>
+                        {formatSourceFilePath(it.sourceFile || it.filename || it.url || '')}
                       </span>
                     </td>
                     <td>
@@ -743,12 +852,12 @@ export default function FetchLogsClient() {
                     </td>
                     <td>
                       <span className="fl-mono" style={{ color: 'var(--ink)' }}>
-                        {it.workDate ? new Date(it.workDate).toISOString().slice(0, 10) : '—'}
+                        {(it.work_date || it.workDate) ? new Date(it.work_date || it.workDate).toISOString().slice(0, 10) : '—'}
                       </span>
                     </td>
                     <td>
                       <span className="fl-mono">
-                        {it.size != null ? Number(it.size).toLocaleString() : '—'}
+                        {formatFileSize(it.size)}
                       </span>
                     </td>
                     <td>
@@ -766,7 +875,7 @@ export default function FetchLogsClient() {
                         <button className="fl-btn fl-btn-action" onClick={() => viewRows(it._id)} title="Preview rows">
                           <Icons.Eye /> Preview
                         </button>
-                        <button className="fl-btn fl-btn-action" onClick={() => { setModalItem(it); setModalOpen(true); setPreviewRows([]) }} title="Details">
+                        <button className="fl-btn fl-btn-action" onClick={() => { setModalItem(it); setModalType('details'); setModalOpen(true); setPreviewRows([]) }} title="Details">
                           <Icons.Info /> Details
                         </button>
                       </div>
@@ -799,22 +908,18 @@ export default function FetchLogsClient() {
             <div className="fl-modal">
               <div className="fl-modal-header">
                 <div className="fl-modal-title">
-                  {modalItem ? (
-                    <span className="fl-mono" style={{ fontFamily: 'DM Mono, monospace', fontSize: '0.8rem' }}>
+                  {modalType === 'preview' ? 'Preview Rows' : 'Record Details'}
+                  {modalItem && (
+                    <span className="fl-mono" style={{ fontFamily: 'DM Mono, monospace', fontSize: '0.7rem', marginLeft: '8px', color: 'var(--ink-faint)' }}>
                       …{String(modalItem._id).slice(-12)}
                     </span>
-                  ) : 'File Record'}
+                  )}
                 </div>
                 <div className="fl-modal-actions">
-                  {modalItem && (
-                    <>
-                      <button className="fl-btn fl-btn-export" onClick={() => viewRaw(modalItem._id)}>
-                        <Icons.ExternalLink /> Raw
-                      </button>
-                      <button className="fl-btn fl-btn-export" onClick={() => viewRows(modalItem._id)}>
-                        <Icons.Eye /> Rows
-                      </button>
-                    </>
+                  {modalItem && modalType === 'preview' && (
+                    <button className="fl-btn fl-btn-export" onClick={() => viewRaw(modalItem._id)}>
+                      <Icons.ExternalLink /> Download CSV
+                    </button>
                   )}
                   <button className="fl-btn fl-btn-apply" onClick={closeModal}>
                     <Icons.X /> Close
@@ -824,47 +929,49 @@ export default function FetchLogsClient() {
 
               {modalItem && (
                 <div className="fl-modal-body">
-                  <div className="fl-panel">
-                    <div className="fl-panel-header">
-                      Record JSON
+                  {modalType === 'details' ? (
+                    <div className="fl-panel">
+                      <div className="fl-panel-header">
+                        Record JSON
+                      </div>
+                      <div className="fl-panel-body">
+                        {JSON.stringify(modalItem, null, 2)}
+                      </div>
                     </div>
-                    <div className="fl-panel-body">
-                      {JSON.stringify(modalItem, null, 2)}
-                    </div>
-                  </div>
-
-                  <div className="fl-panel">
-                    <div className="fl-panel-header">
-                      Preview Rows
-                      <span className="fl-panel-count">{previewRows.length}</span>
-                    </div>
-                    <div className="fl-panel-body" style={{ padding: 0 }}>
-                      {previewRows.length === 0 ? (
-                        <div style={{ padding: '20px', color: 'var(--ink-faint)', textAlign: 'center', fontSize: '0.75rem' }}>
-                          No rows loaded
-                        </div>
-                      ) : (
-                        <table className="fl-preview-table">
-                          <thead>
-                            <tr>
-                              {(previewRows[0] ? Object.keys(previewRows[0]) : []).slice(0, 8).map(h => (
-                                <th key={h}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewRows.map((r, i) => (
-                              <tr key={i}>
-                                {(Object.values(r) as any[]).slice(0, 8).map((v, j) => (
-                                  <td key={j} title={String(v)}>{String(v)}</td>
+                  ) : (
+                    <div className="fl-panel">
+                      <div className="fl-panel-header">
+                        Data Preview
+                        <span className="fl-panel-count">{previewRows.length} rows</span>
+                      </div>
+                      <div className="fl-panel-body" style={{ padding: 0 }}>
+                        {previewRows.length === 0 ? (
+                          <div style={{ padding: '20px', color: 'var(--ink-faint)', textAlign: 'center', fontSize: '0.75rem' }}>
+                            Loading preview...
+                          </div>
+                        ) : (
+                          <table className="fl-preview-table">
+                            <thead>
+                              <tr>
+                                {(previewRows[0] ? Object.keys(previewRows[0]) : []).map(h => (
+                                  <th key={h}>{h}</th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                            </thead>
+                            <tbody>
+                              {previewRows.map((r, i) => (
+                                <tr key={i}>
+                                  {(Object.values(r) as any[]).map((v, j) => (
+                                    <td key={j} title={String(v)}>{String(v)}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
