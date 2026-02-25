@@ -321,7 +321,7 @@ export default function CsvViewerClient() {
 
       <div className="overflow-x-auto border rounded bg-white">
         <table className="min-w-full table-auto ">
-          <thead className="text-left bg-yellow-400 text-white">
+          <thead className="text-left bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-500 text-white">
             <tr>
               <th className="p-3 text-l text-black">Branch</th>
               <th className="p-3 text-l text-black ">Date</th>
