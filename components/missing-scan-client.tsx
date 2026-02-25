@@ -395,13 +395,13 @@ const css = `
 .msc-panel-bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 14px;
-  background: var(--navy);
+  background: var(--red);
 }
 .msc-panel-title {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--font-mono); font-size: 10.5px;
   letter-spacing: 0.1em; text-transform: uppercase;
-  color: rgba(255,255,255,0.4);
+  color: white;
 }
 .msc-panel-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
 .msc-panel-dot.live { background: #22c55e; animation: msc-pulse 1.4s ease infinite; }
@@ -976,7 +976,9 @@ export default function MissingScanClient() {
                               <tr>
                                 <td colSpan={6} style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)' }}>No matching rows</td>
                               </tr>
-                            ) : paginated.map((r: any, i: number) => (
+                            ) : paginated.map((r: any, i: number) => {
+                              const hasMissingDates = Array.isArray(r.missingDates) && r.missingDates.length > 0;
+                              return (
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(15,31,61,0.02)' }}>
                                 <td style={{ padding: '8px 6px', color: 'var(--text-primary)', fontWeight: 600 }}>{r.branch}</td>
                                 <td style={{ padding: '8px 6px', textAlign: 'center', color: 'var(--text-secondary)' }}>{r.pos}</td>
@@ -1008,7 +1010,7 @@ export default function MissingScanClient() {
                                       className="msc-btn msc-btn-sky"
                                       style={{ padding: '4px 8px', fontSize: '10px' }}
                                       onClick={() => handleQueueFetchScan(r)}
-                                      disabled={queueing || reingesting || !(r.missingDates?.length > 0)}
+                                      disabled={queueing || reingesting || !hasMissingDates}
                                     >
                                       Queue Fetch
                                     </button>
@@ -1016,14 +1018,15 @@ export default function MissingScanClient() {
                                       className="msc-btn msc-btn-gold"
                                       style={{ padding: '4px 8px', fontSize: '10px' }}
                                       onClick={() => handleReIngest(r)}
-                                      disabled={queueing || reingesting || !(r.missingDates?.length > 0)}
+                                      disabled={queueing || reingesting || !hasMissingDates || Number(r?.existingCount ?? 0) <= 0}
+                                      title={Number(r?.existingCount ?? 0) <= 0 ? 'Re-ingest is available only when files were already ingested. Use Queue Fetch first.' : 'Re-process existing ingested files for this row'}
                                     >
                                       Re-ingest
                                     </button>
                                   </div>
                                 </td>
                               </tr>
-                            ))}
+                            )})}
                           </tbody>
                         </table>
 

@@ -97,7 +97,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
         aria-hidden={mobile ? !mobileOpen : undefined}
       >
         {/* Premium glass effect overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-transparent to-slate-100/20 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-br from-white-300 via-slate-10 to-white-10/2 pointer-events-none" />
         
         <div className="relative z-10 p-6 pb-20">
           {mobile ? (

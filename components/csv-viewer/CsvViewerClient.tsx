@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { fetchWithAuth } from '../../utils/auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
@@ -47,7 +48,17 @@ function parseCsvTable(csvText: string) {
   return { headers, rows };
 }
 
-function PreviewModal({ file, onClose }: { file: any; onClose: () => void }) {
+function PreviewModal({
+  file,
+  onClose,
+  onReingest,
+  reingestBusy,
+}: {
+  file: any;
+  onClose: () => void;
+  onReingest: (filePath: string) => Promise<void>;
+  reingestBusy: boolean;
+}) {
   const [content, setContent] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
@@ -90,12 +101,13 @@ function PreviewModal({ file, onClose }: { file: any; onClose: () => void }) {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => window.open(`${API_BASE}/api/files/download?file=${encodeURIComponent(file.path)}`)} className="text-sm text-green-700 px-3 py-1.5 h-9 border rounded border-green-700 hover:bg-green-50">Download</button>
-            <button onClick={async () => {
-              try {
-                await fetch(`${API_BASE}/api/files/reingest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: file.path }) });
-                alert('Reingest scheduled');
-              } catch (e) { alert('Failed to schedule reingest'); }
-            }} className="text-sm text-orange-600 border border-orange-600 rounded px-3 py-1.5 h-9">Re-ingest</button>
+            <button
+              disabled={reingestBusy}
+              onClick={() => onReingest(file.path)}
+              className="text-sm text-orange-600 border border-orange-600 rounded px-3 py-1.5 h-9 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {reingestBusy ? 'Queueing...' : 'Re-ingest'}
+            </button>
             <button onClick={onClose} className="text-sm text-gray-600 px-3 py-1.5 h-9 border rounded">Close</button>
           </div>
         </div>
@@ -156,6 +168,35 @@ export default function CsvViewerClient() {
   const [limit, setLimit] = useState(50);
   const [sortBy, setSortBy] = useState('mtime');
   const [sortDir, setSortDir] = useState('desc');
+  const [reingestBusyPath, setReingestBusyPath] = useState<string | null>(null);
+  const [reingestStatus, setReingestStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  async function scheduleReingest(filePath: string) {
+    if (!filePath || reingestBusyPath === filePath) return;
+    setReingestBusyPath(filePath);
+    setReingestStatus(null);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/files/reingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: filePath }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = payload && payload.message ? String(payload.message) : 'Failed to schedule re-ingest';
+        setReingestStatus({ type: 'error', message: msg });
+        return;
+      }
+      const queuedMsg = payload && payload.duplicate
+        ? (payload.message || 'Re-ingest already queued recently for this file.')
+        : (payload && payload.jobId ? `Re-ingest queued. Job ID: ${payload.jobId}` : 'Re-ingest queued.');
+      setReingestStatus({ type: 'success', message: String(queuedMsg) });
+    } catch (e) {
+      setReingestStatus({ type: 'error', message: 'Failed to schedule re-ingest' });
+    } finally {
+      setReingestBusyPath(null);
+    }
+  }
 
   async function load(opts: { page?: number } = {}) {
     const q = new URLSearchParams();
@@ -272,6 +313,12 @@ export default function CsvViewerClient() {
         </div>
       </div>
 
+      {reingestStatus && (
+        <div className={`text-sm px-3 py-2 rounded border ${reingestStatus.type === 'success' ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-700 bg-red-50 border-red-200'}`}>
+          {reingestStatus.message}
+        </div>
+      )}
+
       <div className="overflow-x-auto border rounded bg-white">
         <table className="min-w-full table-auto ">
           <thead className="text-left bg-yellow-400 text-white">
@@ -295,12 +342,13 @@ export default function CsvViewerClient() {
                 <td className="p-3 align-top text-sm">
                   <button className="mr-3 text-sm text-blue-600 border border-blue-600 rounded px-3 py-1.5 h-9 bg-sky-500 text-white" onClick={() => setSelected(f)}>Preview Table</button>
                   <a className="mr-3 text-sm text-green-600 border border-green-600 rounded px-3 py-1.5 h-9 bg-green-500 text-white inline-flex items-center" href={`${API_BASE}/api/files/download?file=${encodeURIComponent(f.path)}`} target="_blank" rel="noreferrer">Download</a>
-                  <button className="text-sm text-orange-600 border border-orange-600 rounded px-3 py-1.5 h-9 bg-red-500 text-white" onClick={async () => {
-                    try {
-                      await fetch(`${API_BASE}/api/files/reingest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: f.path }) });
-                      alert('Reingest scheduled');
-                    } catch (e) { alert('Failed to schedule reingest'); }
-                  }}>Re-ingest</button>
+                  <button
+                    className="text-sm text-orange-600 border border-orange-600 rounded px-3 py-1.5 h-9 bg-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={reingestBusyPath === f.path}
+                    onClick={() => scheduleReingest(f.path)}
+                  >
+                    {reingestBusyPath === f.path ? 'Queueing...' : 'Re-ingest'}
+                  </button>
                 </td>
               </tr>
             ))}
@@ -314,7 +362,12 @@ export default function CsvViewerClient() {
         <button disabled={files.length === 0} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 h-9 border rounded disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
       </div>
 
-      <PreviewModal file={selected} onClose={() => setSelected(null)} />
+      <PreviewModal
+        file={selected}
+        onClose={() => setSelected(null)}
+        onReingest={scheduleReingest}
+        reingestBusy={Boolean(selected && reingestBusyPath === selected.path)}
+      />
     </div>
   );
 }

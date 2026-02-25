@@ -63,35 +63,24 @@ export default function LoginClient() {
 
   return (
     <LoginLayout>
-      <section className="relative bg-white">
-        <div className="pointer-events-none absolute inset-0 -z-20">
-          <svg className="w-full h-full" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-            <defs>
-              <linearGradient id="g1" x1="0" x2="1">
-                <stop offset="0%" stopColor="#29a8e0" stopOpacity="0.08" />
-                <stop offset="50%" stopColor="#ecbc32" stopOpacity="0.06" />
-                <stop offset="100%" stopColor="#bd202e" stopOpacity="0.08" />
-              </linearGradient>
-            </defs>
-            <rect width="800" height="600" fill="url(#g1)" />
-            <circle cx="120" cy="140" r="90" fill="#29a8e0" fillOpacity="0.08" />
-            <circle cx="700" cy="80" r="160" fill="#ecbc32" fillOpacity="0.06" />
-            <circle cx="650" cy="420" r="120" fill="#bd202e" fillOpacity="0.05" />
-          </svg>
-          <div className="absolute inset-0">
-            {/* Decorative gradient background (Spline removed) */}
-            <div className="w-full h-full" style={{
-              background: 'radial-gradient(circle at 10% 20%, rgba(41,168,224,0.08), transparent 8%), radial-gradient(circle at 90% 10%, rgba(236,188,50,0.06), transparent 20%), radial-gradient(circle at 80% 70%, rgba(189,32,46,0.06), transparent 25%)'
-            }} />
-          </div>
-        </div>
+      <section
+        className="h-screen relative overflow-hidden bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/images/Biggs.svg')" }}
+      >
+        {/* <div id='stripes' className='absolute top-[-20px] left-[-90px] h-full w-[17rem] md:w-[20rem] flex rotate-90 pointer-events-none'>
+          <div className='w-20 md:w-28 h-auto bg-red-500 rounded-xl'></div>
+          <div className='w-20 md:w-28 h-auto bg-yellow-500 rounded-xl'></div>
+          <div className='w-20 md:w-28 h-auto bg-sky-500 rounded-xl'></div>
+        </div> */}
+        <div className="pointer-events-none absolute inset-0 -z-20 bg-black/15" />
 
-        <div className="flex flex-col items-center justify-center px-6 py-8 mx-auto md:h-screen lg:py-0">
-          <div className="flex items-center justify-center mb-6">
-            <img className="w-20 h-auto" src="/images/logo.png" alt="BIGGS logo" />
-          </div>
+        <div className="flex flex-col items-center justify-center px-5 py-8 mx-auto md:h-screen lg:py-0">
+          
 
-          <div className="w-full bg-transparent rounded-lg shadow sm:max-w-md xl:p-0 border border-white/10">
+          <div className="w-full bg-white/60 backdrop-blur-sm rounded-lg shadow sm:max-w-md xl:p-0 border border-black/10">
+          <div className="flex items-center justify-center mt-3">
+            <img className="w-32 h-auto" src="/images/logo.png" alt="BIGGS logo" />
+          </div>
             <div className="p-6 space-y-4 sm:p-8">
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-card-foreground">Sign in to your account</h1>
 
@@ -102,13 +91,13 @@ export default function LoginClient() {
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div>
                   <label htmlFor="email" className="block mb-2 text-sm font-medium text-card-foreground">Your email</label>
-                  <input id="email" name="email" type="email" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="name@company.com" required className="bg-[hsl(var(--background))] border border-[hsl(var(--border))] text-card-foreground rounded-lg focus:ring-2 focus:ring-[hsl(var(--primary))] focus:border-[hsl(var(--primary))] block w-full p-3" />
+                  <input id="email" name="email" type="email" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="name@company.com" required className="bg-[hsl(var(--background))] border border-sky-500 text-card-foreground rounded-lg focus:ring-2 focus:ring-[hsl(var(--primary))] focus:border-[hsl(var(--primary))] block w-full p-3" />
                 </div>
 
                 <div>
                   <label htmlFor="password" className="block mb-2 text-sm font-medium text-card-foreground">Password</label>
                   <div className="relative">
-                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="bg-[hsl(var(--background))] border border-[hsl(var(--border))] text-card-foreground rounded-lg focus:ring-2 focus:ring-[hsl(var(--primary))] focus:border-[hsl(var(--primary))] block w-full p-3 pr-12" />
+                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="bg-[hsl(var(--background))] border border-sky-500 text-card-foreground rounded-lg focus:ring-2 focus:ring-[hsl(var(--primary))] focus:border-[hsl(var(--primary))] block w-full p-3 pr-12" />
                     <button type="button" onClick={() => setShowPassword(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
@@ -125,14 +114,14 @@ export default function LoginClient() {
                     </div>
                   </div>
 
-                  <a href="#" className="text-sm font-medium text-[hsl(var(--primary))] hover:underline">Forgot password?</a>
+                  <a href="#" className="text-sm font-medium text-sky-900 hover:underline">Forgot password?</a>
                 </div>
 
                 <button type="submit" className="w-full text-black bg-[hsl(var(--accent))] hover:brightness-95 font-medium rounded-lg text-sm px-5 py-3 text-center" disabled={loading}>
                   {loading ? 'Signing in...' : 'Sign in'}
                 </button>
 
-                <p className="text-sm font-light text-muted-foreground">Don’t have an account yet? <a href="#" className="font-medium text-[hsl(var(--primary))] hover:underline">Sign up</a></p>
+                <p className="text-sm font-light text-muted-foreground">Don’t have an account yet? <a href="#" className="font-medium text-red-800 hover:underline">Sign up</a></p>
               </form>
             </div>
           </div>

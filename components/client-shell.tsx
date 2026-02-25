@@ -97,7 +97,7 @@ export default function ClientShell({ children }: { children: React.ReactNode })
 
     if (!authed) {
     // public view: just render children centered
-    return <div className="min-h-screen bg-slate-50 py-12">{children}</div>
+    return <div className="min-h-screen bg-slate-50">{children}</div>
   }
 
   return (
@@ -114,23 +114,39 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       />
 
       <div className={`flex-1 relative z-10 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-80'}`}>
-        <header className="sticky top-0 z-20">
-          <div className="flex items-center justify-between px-4 md:px-8 py-2 md:py-3 border-b border-white/5 shadow-sm bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]">
-            <div className="flex items-center gap-3">
-              <button aria-label="Open menu" onClick={() => setShowSidebar(s => !s)} className="p-2 rounded hover:bg-white/5 md:hidden">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </button>
-              <HeaderTitle />
-            </div>
+       <header className="sticky top-0 z-20">
+  <div className="relative flex items-center px-4 md:px-8 py-2 md:py-3 border-b border-white/5 shadow-sm bg-gradient-to-r from-sky-50 via-sky-400 to-sky-500 text-[hsl(var(--primary-foreground))]">
 
-            <div className="flex items-center gap-3">
-              {/* <a href="/jobs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Jobs</a>
-              <a href="/admin/fetch-logs" className="flex items-center gap-2 px-3 py-1 rounded-md hover:bg-white/5 transition">Fetch Logs</a>
-              <a href="/upload" className="hidden md:inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[hsl(var(--accent))] text-[hsl(var(--primary-foreground))] hover:opacity-95 transition">Upload</a> */}
-              <ProfileMenu />
-            </div>
-          </div>
-        </header>
+    {/* LEFT SIDE */}
+    <div className="flex items-center gap-3">
+      <div className='grid grid-col-2 absolute inset-0'>
+        <div className="bg-gradient-to-r from-red-600 via-red-400 to-red-300 w-20 "></div>
+        <div className="bg-gradient-to-r from-yellow-600 via-yellow-400 to-yellow-300 w-20 "></div> 
+        <div className="bg-gradient-to-r from-sky-600 via-sky-400 to-sky-300 w-20"></div>
+      </div>
+      {/* <button
+        aria-label="Open menu"
+        onClick={() => setShowSidebar(s => !s)}
+        className="p-2 rounded hover:bg-white/5 md:hidden"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button> */}
+    </div>
+
+    {/* CENTER TITLE */}
+    <div className="absolute left-1/2 -translate-x-1/2">
+      <HeaderTitle />
+    </div>
+
+    {/* RIGHT SIDE */}
+    <div className="ml-auto flex items-center gap-3">
+      <ProfileMenu />
+    </div>
+
+  </div>
+</header>
 
         <main className="">
           <div className="">{children}</div>

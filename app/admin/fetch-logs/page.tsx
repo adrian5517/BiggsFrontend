@@ -6,13 +6,13 @@ import FetchLogsClient from '@/components/fetch-logs-client'
 
 export default function Page() {
   return (
-    <LoginLayout>
-      <div className="max-w-6xl mx-auto py-8">
+    
+      <div className="max-w-8xl mx-auto py-3 ">
         
         <div className="bg-card p-4 rounded">
           <FetchLogsClient />
         </div>
       </div>
-    </LoginLayout>
+    
   )
 }

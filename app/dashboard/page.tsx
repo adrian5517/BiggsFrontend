@@ -66,7 +66,7 @@ const css = `
   background-image:
     radial-gradient(ellipse 70% 40% at 5% 0%, rgba(77,182,232,0.07) 0%, transparent 55%),
     radial-gradient(ellipse 50% 30% at 95% 100%, rgba(232,168,32,0.05) 0%, transparent 50%);
-  padding: 32px 24px 56px;
+  padding: 32px 24px 20px;
 }
 
 // @media (max-width: 640px) {
@@ -74,7 +74,7 @@ const css = `
 // }
 
 .dash-inner {
-  max-width: 1100px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
@@ -377,7 +377,7 @@ function DashboardContent() {
                 <span className="dash-logo-text">B</span>
               </div> */}
               <div className="dash-heading-group">
-                <span className="dash-eyebrow">Biggs 1983 · Operations</span>
+                
                 <h1 className="dash-title">Ops Dashboard</h1>
                 <p className="dash-desc">System operations, fetch control & status monitoring</p>
               </div>

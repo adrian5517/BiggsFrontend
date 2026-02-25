@@ -12,6 +12,7 @@ type ScanRow = {
   pos: string | number;
   totalDates?: number;
   missingDates?: string[];
+  existingCount?: number;
 };
 
 function formatShortDate(value: string) {
@@ -34,15 +35,15 @@ const css = `
   justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
-  background: #0f1f3d;
-  color: rgba(255,255,255,0.78);
+  color: white;
 }
 
 .msr-title {
   font-family: "DM Mono", monospace;
-  font-size: 11px;
+  font-size: 15px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.2;
 }
 
 .msr-count {
@@ -63,7 +64,7 @@ const css = `
 
 .msr-queue {
   height: 30px;
-  border: 1px solid rgba(255,255,255,0.24);
+  border: 1px solid #00c4cc;
   border-radius: 8px;
   padding: 0 11px;
   font-size: 11px;
@@ -190,7 +191,7 @@ const css = `
 }
 
 .msr-table thead tr {
-  background: #f2f4f7;
+  background: #e8ba37;
   border-bottom: 1px solid rgba(15,31,61,0.12);
 }
 
@@ -484,15 +485,15 @@ export default function MissingScanResultTableClient() {
   return (
     <div className="msr-card">
       <style>{css}</style>
-      <div className="msr-head">
-        <span className="msr-title">Missing Scan Result Table</span>
+      <div className="msr-head bg-gradient-to-r from-sky-500 via-sky-400 to-sky-300">
+        <span className="msr-title ">Missing Scan Result Table</span>
         <div className="msr-head-right">
           <span className="msr-count">{rows.length} rows</span>
-          <button className="msr-btn" onClick={refreshFromStorage}>Refresh Results</button>
-          <button className="msr-btn" onClick={handleReIngest} disabled={reingesting || queueing}>
+          <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-lg" onClick={refreshFromStorage}>Refresh Results</button>
+          <button className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1 rounded-lg" onClick={handleReIngest} disabled={reingesting || queueing}>
             {reingesting ? "Re-ingesting..." : "Re-ingest"}
           </button>
-          <button className="msr-queue" onClick={handleQueueFetchScan} disabled={queueing || reingesting}>
+          <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1 rounded-lg border border-white" onClick={handleQueueFetchScan} disabled={queueing || reingesting}>
             {queueing ? "Queuing..." : "Queue Fetch Scan"}
           </button>
         </div>
@@ -575,6 +576,7 @@ export default function MissingScanResultTableClient() {
                     pageRows.map((row, index) => {
                       const rowKey = `${row.branch}-${row.pos}-${index}`;
                       const isOpen = Boolean(expandedRows[rowKey]);
+                      const hasMissingDates = Array.isArray(row.missingDates) && row.missingDates.length > 0;
                       return (
                         <tr key={rowKey}>
                           <td className="msr-branch">{row.branch}</td>
@@ -590,7 +592,7 @@ export default function MissingScanResultTableClient() {
                                   </span>
                                   <button
                                     type="button"
-                                    className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold px-2 py-1 rounded"
+                                    className="bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold px-2 py-1 rounded"
                                     onClick={() => setExpandedRows((prev) => ({ ...prev, [rowKey]: !isOpen }))}
                                   >
                                     {isOpen ? "Hide Missing Dates" : "Show Missing Dates"}
@@ -612,16 +614,17 @@ export default function MissingScanResultTableClient() {
                           <td>
                             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                               <button
-                                className="msr-btn"
+                                className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1 rounded-lg"
                                 onClick={() => handleQueueFetchScan(row)}
-                                disabled={queueing || reingesting || !(row.missingDates?.length > 0)}
+                                disabled={queueing || reingesting || !hasMissingDates}
                               >
                                 Queue Fetch
                               </button>
                               <button
-                                className="msr-btn"
+                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-lg"
                                 onClick={() => handleReIngest(row)}
-                                disabled={queueing || reingesting || !(row.missingDates?.length > 0)}
+                                disabled={queueing || reingesting || !hasMissingDates || Number(row?.existingCount ?? 0) <= 0}
+                                title={Number(row?.existingCount ?? 0) <= 0 ? 'Re-ingest is available only when files were already ingested. Use Queue Fetch first.' : 'Re-process existing ingested files for this row'}
                               >
                                 Re-ingest
                               </button>

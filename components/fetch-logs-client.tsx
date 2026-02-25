@@ -14,7 +14,7 @@ const styles = `
     font-family: 'Sora', sans-serif;
     --ink: #0f0f0f;
     --ink-muted: #6b6b6b;
-    --ink-faint: #b0b0b0;
+    --ink-faint: #161515;
     --surface: #fafaf8;
     --card: #ffffff;
     --border: #e8e8e4;
@@ -69,7 +69,7 @@ const styles = `
     font-size: 0.7rem;
     font-weight: 500;
     letter-spacing: 0.04em;
-    background: var(--ink);
+    background: green;
     color: #fff;
     padding: 3px 10px;
     border-radius: 100px;
@@ -193,7 +193,6 @@ const styles = `
   .fl-btn-action {
     font-size: 0.72rem;
     padding: 4px 10px;
-    background: var(--surface);
     color: var(--ink);
     border-color: var(--border-strong);
     border-radius: 5px;
@@ -225,7 +224,7 @@ const styles = `
     border-collapse: collapse;
   }
   .fl-table thead {
-    background: var(--surface);
+    background: #32a7de;
     border-bottom: 1px solid var(--border);
   }
   .fl-table th {
@@ -539,6 +538,7 @@ export default function FetchLogsClient() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalItem, setModalItem] = useState<any>(null)
   const [previewRows, setPreviewRows] = useState<any[]>([])
+  const [previewInfo, setPreviewInfo] = useState<string>('Loading preview...')
   const [modalType, setModalType] = useState<'preview' | 'details'>('preview')
 
   useEffect(() => { load() }, [page])
@@ -571,7 +571,16 @@ export default function FetchLogsClient() {
       if (endDate) q.set('endDate', endDate)
       if (quickSearch.trim()) q.set('search', quickSearch.trim())
       const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/files?${q.toString()}`)
-      if (!res.ok) throw new Error(`Failed: ${res.status}`)
+      if (!res.ok) {
+        if (res.status === 401) {
+          setItems([])
+          setTotal(0)
+          return
+        }
+        setItems([])
+        setTotal(0)
+        return
+      }
       const data = await res.json().catch(() => null)
       if (data) {
         const normalizedItems = (data.items || []).map((item: any) => ({
@@ -583,7 +592,8 @@ export default function FetchLogsClient() {
         setTotal(Number(data.total || 0))
       }
     } catch (e) {
-      console.error('load fetch logs error', e)
+      setItems([])
+      setTotal(0)
     } finally { setLoading(false) }
   }
 
@@ -608,27 +618,52 @@ export default function FetchLogsClient() {
 
   function viewRows(id: string) {
     const url = `${API_BASE}/api/fetch/files/${id}/rows?limit=200`;
+    const it = items.find((i: any) => String(i._id) === String(id))
+    setModalItem(it || null)
+    setModalType('preview')
+    setPreviewRows([])
+    setPreviewInfo('Loading preview...')
+    setModalOpen(true)
+
+    ;
     (async () => {
       try {
-        console.debug('fetch-logs preview URL', url)
         const res = await auth.fetchWithAuth(url)
-        if (!res.ok) throw new Error(`Failed rows: ${res.status}`)
+        if (!res.ok) {
+          if (res.status === 404) {
+            setPreviewRows([])
+            setPreviewInfo('No parsed rows available for this file.')
+            return
+          }
+          if (res.status === 401) {
+            setPreviewRows([])
+            setPreviewInfo('Unauthorized. Please login again.')
+            return
+          }
+          setPreviewRows([])
+          setPreviewInfo(`Failed to load rows (${res.status}).`)
+          return
+        }
         const data = await res.json().catch(() => null)
         const rows = Array.isArray(data)
           ? data
           : (Array.isArray(data?.items) ? data.items : [])
         setPreviewRows(rows)
-        const it = items.find((i: any) => String(i._id) === String(id))
-        setModalItem(it || null)
-        setModalType('preview')
-        setModalOpen(true)
+        setPreviewInfo(rows.length === 0 ? 'No parsed rows available for this file.' : '')
       } catch (e) {
-        console.error('preview rows error', e)
+        setPreviewRows([])
+        setPreviewInfo('Failed to load preview rows.')
       }
     })()
   }
 
-  function closeModal() { setModalOpen(false); setModalItem(null); setPreviewRows([]); setModalType('preview') }
+  function closeModal() {
+    setModalOpen(false)
+    setModalItem(null)
+    setPreviewRows([])
+    setPreviewInfo('Loading preview...')
+    setModalType('preview')
+  }
 
   function formatFileSize(value: any) {
     const bytes = Number(value)
@@ -720,7 +755,7 @@ export default function FetchLogsClient() {
             </div>
             Fetch Logs
           </div>
-          <span className="fl-badge">{total.toLocaleString()} records</span>
+          <span className="bg-green-500 fl-badge">{total.toLocaleString()} records</span>
         </div>
 
         {/* Controls */}
@@ -869,13 +904,13 @@ export default function FetchLogsClient() {
                     </td>
                     <td>
                       <div className="fl-actions">
-                        <button className="fl-btn fl-btn-action" onClick={() => viewRaw(it._id)} title="View raw">
+                        <button className="fl-btn bg-sky-500 hover:bg-sky-600 text-white rounded-lg" onClick={() => viewRaw(it._id)} title="View raw">
                           <Icons.Code /> Raw
                         </button>
-                        <button className="fl-btn fl-btn-action" onClick={() => viewRows(it._id)} title="Preview rows">
+                        <button className="fl-btn bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg" onClick={() => viewRows(it._id)} title="Preview rows">
                           <Icons.Eye /> Preview
                         </button>
-                        <button className="fl-btn fl-btn-action" onClick={() => { setModalItem(it); setModalType('details'); setModalOpen(true); setPreviewRows([]) }} title="Details">
+                        <button className="fl-btn bg-red-500 hover:bg-red-600 text-white rounded-lg" onClick={() => { setModalItem(it); setModalType('details'); setModalOpen(true); setPreviewRows([]) }} title="Details">
                           <Icons.Info /> Details
                         </button>
                       </div>
@@ -947,7 +982,7 @@ export default function FetchLogsClient() {
                       <div className="fl-panel-body" style={{ padding: 0 }}>
                         {previewRows.length === 0 ? (
                           <div style={{ padding: '20px', color: 'var(--ink-faint)', textAlign: 'center', fontSize: '0.75rem' }}>
-                            Loading preview...
+                            {previewInfo || 'Loading preview...'}
                           </div>
                         ) : (
                           <table className="fl-preview-table">
