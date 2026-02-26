@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import auth from '@/utils/auth'
+import { useSearchParams } from 'next/navigation'
 import Table, { TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
@@ -524,6 +525,7 @@ const Icons = {
 }
 
 export default function FetchLogsClient() {
+  const searchParams = useSearchParams()
   const [items, setItems] = useState<any[]>([])
   const [total, setTotal] = useState<number>(0)
   const [page, setPage] = useState(1)
@@ -531,6 +533,7 @@ export default function FetchLogsClient() {
   const [loading, setLoading] = useState(false)
   const [branches, setBranches] = useState<string[]>([])
   const [filterBranch, setFilterBranch] = useState<string>('')
+  const [filterStatus, setFilterStatus] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [quickSearch, setQuickSearch] = useState<string>('')
@@ -543,6 +546,13 @@ export default function FetchLogsClient() {
 
   useEffect(() => { load() }, [page])
   useEffect(() => { loadBranches() }, [])
+  useEffect(() => {
+    const statusFromQuery = String(searchParams?.get('status') || '').trim()
+    if (!statusFromQuery) return
+    setFilterStatus(statusFromQuery)
+    setPage(1)
+    load({ status: statusFromQuery, page: 1 })
+  }, [searchParams])
 
   async function loadBranches() {
     try {
@@ -560,13 +570,15 @@ export default function FetchLogsClient() {
     }
   }
 
-  async function load() {
+  async function load(overrides?: { status?: string; page?: number }) {
     setLoading(true)
     try {
       const q = new URLSearchParams()
       q.set('limit', String(limit))
-      q.set('page', String(page))
+      q.set('page', String(overrides && Number.isFinite(Number(overrides.page)) ? Number(overrides.page) : page))
       if (filterBranch) q.set('branch', filterBranch)
+      const effectiveStatus = overrides && typeof overrides.status === 'string' ? overrides.status : filterStatus
+      if (effectiveStatus) q.set('status', effectiveStatus)
       if (startDate) q.set('startDate', startDate)
       if (endDate) q.set('endDate', endDate)
       if (quickSearch.trim()) q.set('search', quickSearch.trim())
@@ -771,6 +783,20 @@ export default function FetchLogsClient() {
           </div>
 
           <div className="fl-field-group">
+            <div className="fl-label">Status</div>
+            <div className="fl-select-wrap">
+              <select className="fl-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                <option value="">All statuses</option>
+                <option value="queued,running">Active (queued/running)</option>
+                <option value="queued">Queued</option>
+                <option value="running">Running</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="fl-field-group">
             <div className="fl-label">From</div>
             <input type="date" className="fl-date-input" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
@@ -797,7 +823,7 @@ export default function FetchLogsClient() {
               <button className="fl-btn fl-btn-apply" onClick={() => { setPage(1); load() }}>
                 <Icons.Search /> Apply
               </button>
-              <button className="fl-btn fl-btn-clear" onClick={() => { setFilterBranch(''); setStartDate(''); setEndDate(''); setQuickSearch(''); setPage(1); load() }}>
+              <button className="fl-btn fl-btn-clear" onClick={() => { setFilterBranch(''); setFilterStatus(''); setStartDate(''); setEndDate(''); setQuickSearch(''); setPage(1); load({ status: '', page: 1 }) }}>
                 <Icons.X /> Clear
               </button>
             </div>

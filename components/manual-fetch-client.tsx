@@ -150,10 +150,11 @@ const css = `
 /* ── Form grid ── */
 .mfc-form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 14px;
   margin-bottom: 18px;
 }
+@media (max-width: 900px) { .mfc-form-row { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .mfc-form-row { grid-template-columns: 1fr; } }
 
 /* ── Field ── */
@@ -344,6 +345,179 @@ const css = `
 
 /* ── Action row ── */
 .mfc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+
+.mfc-options {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.mfc-options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mfc-options-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mfc-options-toggle {
+  border: 1px solid var(--border-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mfc-options-purpose {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mfc-options-body {
+  margin-top: 8px;
+}
+
+.mfc-preset-row {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mfc-preset {
+  border: 1px solid var(--border-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mfc-preset.active {
+  background: var(--gold-muted);
+  border-color: var(--gold);
+  color: var(--text-primary);
+}
+
+.mfc-options-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .mfc-options-grid { grid-template-columns: 1fr; }
+}
+
+.mfc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.mfc-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mfc-toggle-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.mfc-toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mfc-select {
+  min-width: 78px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.mfc-progress {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.mfc-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.mfc-progress-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mfc-progress-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mfc-progress-track {
+  width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.mfc-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--red), var(--sky));
+  transition: width var(--t);
+}
+
+.mfc-progress-meta {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 .mfc-btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -649,8 +823,11 @@ function BranchList({ branches, selected, setSelected }: { branches: string[]; s
   );
 }
 
-function SummaryChips({ selected, date, positions }: { selected: string[]; date: string; positions: string }) {
-  if (!selected.length && !date && !positions) return null;
+function SummaryChips({ selected, startDate, endDate, positions }: { selected: string[]; startDate: string; endDate: string; positions: string }) {
+  if (!selected.length && !startDate && !endDate && !positions) return null;
+  const rangeLabel = startDate && endDate
+    ? `${startDate} → ${endDate}`
+    : (startDate || endDate || '');
   return (
     <div className="mfc-chips">
       {selected.length > 0 && (
@@ -658,7 +835,7 @@ function SummaryChips({ selected, date, positions }: { selected: string[]; date:
           <Ico.Git /> {selected.length} branch{selected.length > 1 ? "es" : ""}
         </span>
       )}
-      {date && <span className="mfc-chip chip-date"><Ico.Calendar /> {date}</span>}
+      {rangeLabel && <span className="mfc-chip chip-date"><Ico.Calendar /> {rangeLabel}</span>}
       {positions && <span className="mfc-chip chip-pos"><Ico.Hash /> {positions}</span>}
     </div>
   );
@@ -668,10 +845,21 @@ function SummaryChips({ selected, date, positions }: { selected: string[]; date:
 export default function ManualFetchClient() {
   const branches = useBranches();
   const [selected, setSelected] = useState<string[]>([]);
-  const [date, setDate] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [positions, setPositions] = useState("1,2");
+  const [preset, setPreset] = useState<"speed" | "balanced">("speed");
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [verboseDebug, setVerboseDebug] = useState(false);
+  const [listRetries, setListRetries] = useState(1);
+  const [autoRealignAfterFetch, setAutoRealignAfterFetch] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [live, setLive] = useState(false);
+  const [phaseLabel, setPhaseLabel] = useState("Idle");
+  const [filesTotal, setFilesTotal] = useState(0);
+  const [filesCompleted, setFilesCompleted] = useState(0);
+  const [rowsInserted, setRowsInserted] = useState(0);
+  const [progressPct, setProgressPct] = useState(0);
   const esRef = useRef<EventSource | null>(null);
   const consoleRef = useRef<HTMLDivElement | null>(null);
 
@@ -679,13 +867,42 @@ export default function ManualFetchClient() {
     if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
   }, [messages]);
 
+  const applyPreset = (next: "speed" | "balanced") => {
+    setPreset(next);
+    if (next === "speed") {
+      setVerboseDebug(false);
+      setListRetries(1);
+      setAutoRealignAfterFetch(false);
+    } else {
+      setVerboseDebug(false);
+      setListRetries(2);
+      setAutoRealignAfterFetch(true);
+    }
+  };
+
   const handleStart = async () => {
-    if (!date) { alert("Please select a date before starting."); return; }
-    const body: any = { date };
+    if (!startDate || !endDate) { alert("Please select start and end dates before starting."); return; }
+    if (startDate > endDate) { alert("Start date must be earlier than or equal to end date."); return; }
+    const body: any = {
+      start: startDate,
+      end: endDate,
+      options: {
+        verboseDebug,
+        listRetries,
+        autoRealignAfterFetch,
+      },
+    };
     if (selected.length) body.branches = selected;
     if (positions.trim()) body.positions = positions;
 
     try {
+      setMessages([]);
+      setPhaseLabel("Queueing job");
+      setFilesTotal(0);
+      setFilesCompleted(0);
+      setRowsInserted(0);
+      setProgressPct(0);
+
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/manual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -708,18 +925,73 @@ export default function ManualFetchClient() {
         try {
           const d = JSON.parse(ev.data);
           setMessages(m => [...m, d]);
+
+          if (d.type === "queued") {
+            setPhaseLabel(d.message || "Queued");
+            if (typeof d.filesTotal === "number" && d.filesTotal > 0) {
+              setFilesTotal(d.filesTotal);
+              setProgressPct(0);
+            }
+          }
+
+          if (d.type === "progress") {
+            const msg = String(d.message || "").toLowerCase();
+            if (msg.includes("collecting")) setPhaseLabel("Collecting file list");
+            else if (msg.includes("selection summary")) setPhaseLabel("Filtering latest files");
+            else if (msg.includes("attempting fetch")) setPhaseLabel("Downloading CSV files");
+            else if (msg.includes("auto realign started")) setPhaseLabel("Auto realign in progress");
+            else if (msg.includes("auto realign finished")) setPhaseLabel("Auto realign finished");
+            else if (d.message) setPhaseLabel(String(d.message));
+            if (typeof d.totalRows === "number") setRowsInserted(d.totalRows);
+          }
+
+          if (d.type === "file-complete") {
+            const completed = Number(d.filesCompleted || 0);
+            const total = Number(d.filesTotal || filesTotal || 0);
+            if (total > 0) {
+              setFilesTotal(total);
+              setFilesCompleted(completed);
+              setProgressPct(Math.max(0, Math.min(100, Math.round((completed / total) * 100))));
+            }
+            if (typeof d.rows === "number") {
+              setRowsInserted(prev => prev + d.rows);
+            }
+            setPhaseLabel("Ingestion running");
+          }
+
+          if (d.type === "complete") {
+            const total = Number(d.filesTotal || filesTotal || 0);
+            const completed = Number(d.filesCompleted || total || filesCompleted || 0);
+            setFilesTotal(total);
+            setFilesCompleted(completed);
+            if (typeof d.rowsInserted === "number") setRowsInserted(d.rowsInserted);
+            setProgressPct(100);
+            setPhaseLabel("Completed");
+          }
+
+          if (d.type === "error") {
+            setPhaseLabel("Failed");
+          }
+
           if (d.type === "complete" || d.type === "error") { es.close(); setLive(false); }
         } catch { setMessages(m => [...m, { type: "message", raw: ev.data }]); }
       };
-      es.onerror = () => { setMessages(m => [...m, { type: "sse-error" }]); es.close(); setLive(false); };
+      es.onerror = () => {
+        setMessages(m => [...m, { type: "sse-error" }]);
+        setPhaseLabel("Connection error");
+        es.close();
+        setLive(false);
+      };
     } catch (e) {
       setMessages(m => [...m, { type: "error", message: String(e) }]);
+      setPhaseLabel("Failed to start");
     }
   };
 
   const handleStop = () => {
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
     setMessages(m => [...m, { type: "stopped", message: "Stopped by user" }]);
+    setPhaseLabel("Stopped by user");
     setLive(false);
   };
 
@@ -754,13 +1026,25 @@ export default function ManualFetchClient() {
             <div className="mfc-field">
               <label className="mfc-label">
                 <span className="mfc-label-icon"><Ico.Calendar /></span>
-                Date
+                Start Date
               </label>
               <input
                 className="mfc-input"
                 type="date"
-                value={date}
-                onChange={e => setDate(e.target.value)}
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="mfc-field">
+              <label className="mfc-label">
+                <span className="mfc-label-icon"><Ico.Calendar /></span>
+                End Date
+              </label>
+              <input
+                className="mfc-input"
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
               />
             </div>
             <div className="mfc-field">
@@ -779,7 +1063,101 @@ export default function ManualFetchClient() {
 
           <hr className="mfc-divider" />
           <BranchList branches={branches} selected={selected} setSelected={setSelected} />
-          <SummaryChips selected={selected} date={date} positions={positions} />
+          <SummaryChips selected={selected} startDate={startDate} endDate={endDate} positions={positions} />
+
+          <div className="mfc-options">
+            <div className="mfc-options-head">
+              <div className="mfc-options-title">Fetch Options</div>
+              <button
+                type="button"
+                className="mfc-options-toggle"
+                onClick={() => setOptionsOpen(v => !v)}
+              >
+                {optionsOpen ? "Close" : "Open"}
+              </button>
+            </div>
+            <div className="mfc-options-purpose">
+              Controls speed vs reliability per fetch run.
+            </div>
+
+            {optionsOpen && (
+              <div className="mfc-options-body">
+                <div className="mfc-preset-row">
+                  <button
+                    type="button"
+                    className={`mfc-preset ${preset === "speed" ? "active" : ""}`}
+                    onClick={() => applyPreset("speed")}
+                  >
+                    Speed First
+                  </button>
+                  <button
+                    type="button"
+                    className={`mfc-preset ${preset === "balanced" ? "active" : ""}`}
+                    onClick={() => applyPreset("balanced")}
+                  >
+                    Balanced (Self-Heal)
+                  </button>
+                </div>
+
+                <div className="mfc-options-grid">
+                  <div className="mfc-toggle">
+                    <div className="mfc-toggle-label">
+                      <span className="mfc-toggle-title">Verbose Debug Logs</span>
+                      <span className="mfc-toggle-desc">Equivalent to POS_DEBUG</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={verboseDebug}
+                      onChange={e => { setPreset("balanced"); setVerboseDebug(e.target.checked); }}
+                    />
+                  </div>
+
+                  <div className="mfc-toggle">
+                    <div className="mfc-toggle-label">
+                      <span className="mfc-toggle-title">List Retries</span>
+                      <span className="mfc-toggle-desc">Equivalent to POS_LIST_RETRIES</span>
+                    </div>
+                    <select
+                      className="mfc-select"
+                      value={listRetries}
+                      onChange={e => { setPreset("balanced"); setListRetries(Number(e.target.value)); }}
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                    </select>
+                  </div>
+
+                  <div className="mfc-toggle">
+                    <div className="mfc-toggle-label">
+                      <span className="mfc-toggle-title">Auto Realign After Fetch</span>
+                      <span className="mfc-toggle-desc">Equivalent to POS_AUTO_REALIGN_AFTER_FETCH</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={autoRealignAfterFetch}
+                      onChange={e => { setPreset("balanced"); setAutoRealignAfterFetch(e.target.checked); }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mfc-progress">
+            <div className="mfc-progress-top">
+              <span className="mfc-progress-label">Current Stage</span>
+              <span className="mfc-progress-value">{phaseLabel}</span>
+            </div>
+            <div className="mfc-progress-track">
+              <div className="mfc-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+            <div className="mfc-progress-meta">
+              <span>{progressPct}%</span>
+              <span>Files: {filesCompleted}/{filesTotal || "?"}</span>
+              <span>Rows: {rowsInserted}</span>
+            </div>
+          </div>
 
           <div className="mfc-actions">
             <button className="mfc-btn mfc-btn-accent" onClick={handleStart} disabled={live}>

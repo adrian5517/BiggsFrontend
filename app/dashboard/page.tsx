@@ -191,6 +191,7 @@ const css = `
   transition: box-shadow var(--t), transform var(--t);
   animation: dash-fade 0.4s ease both;
 }
+.stat-card-clickable { cursor: pointer; }
 .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .stat-card:nth-child(1) { animation-delay: 0.05s; }
 .stat-card:nth-child(2) { animation-delay: 0.1s; }
@@ -321,11 +322,12 @@ const Ico = {
 
 /* ─────────────────────────── Stat Card ─────────────────────────── */
 function StatCard({
-  label, value, sub, icon, accentClass, iconClass, trend, trendLabel, loading,
+  label, value, sub, icon, accentClass, iconClass, trend, trendLabel, loading, onClick,
 }: {
   label: string; value: number | null | undefined; sub: string;
   icon: React.ReactNode; accentClass: string; iconClass: string;
   trend?: "up" | "flat"; trendLabel?: string; loading: boolean;
+  onClick?: () => void;
 }) {
   const renderValue = () => {
     if (loading && value === undefined) return <div className="stat-spinner" />;
@@ -334,7 +336,13 @@ function StatCard({
   };
 
   return (
-    <div className="stat-card">
+    <div
+      className={`stat-card ${onClick ? 'stat-card-clickable' : ''}`}
+      onClick={onClick}
+      onKeyDown={(e) => { if (onClick && (e.key === 'Enter' || e.key === ' ')) onClick(); }}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       <div className={`stat-card-accent ${accentClass}`} />
       <div className="stat-card-top">
         <div className={`stat-icon ${iconClass}`}>{icon}</div>
@@ -355,6 +363,7 @@ function StatCard({
 function DashboardContent() {
   const { stats, loading, lastError } = useDashboardStats();
   const toast = useToast();
+  const router = useRouter();
 
   React.useEffect(() => {
     if (lastError) toast.addToast(`Dashboard: ${lastError}`, "error");
@@ -391,15 +400,16 @@ function DashboardContent() {
           {/* Stat cards */}
           <div className="dash-stats">
             <StatCard
-              label="Live Events"
-              value={stats?.liveEvents}
-              sub="Active queue activity"
+              label="Active Jobs"
+              value={stats?.activeJobs}
+              sub="Queued and running fetch jobs"
               icon={<Ico.Activity />}
               accentClass="sky"
               iconClass="stat-icon-sky"
               trend="up"
-              trendLabel="↑ Live"
+              trendLabel="Queue"
               loading={loading}
+              onClick={() => router.push('/admin/fetch-logs?status=queued,running')}
             />
             <StatCard
               label="Uploads"
@@ -411,6 +421,7 @@ function DashboardContent() {
               trend="flat"
               trendLabel="Today"
               loading={loading}
+              onClick={() => router.push('/uploads')}
             />
             <StatCard
               label="Files"
@@ -420,6 +431,7 @@ function DashboardContent() {
               accentClass="red"
               iconClass="stat-icon-red"
               loading={loading}
+              onClick={() => router.push('/files')}
             />
           </div>
 

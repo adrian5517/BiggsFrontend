@@ -5,12 +5,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
 type Stats = {
   liveEvents?: number | null
+  activeJobs?: number | null
   uploads?: number | null
   files?: number | null
 }
 
 export default function useDashboardStats(pollInterval = 10000) {
-  const [stats, setStats] = useState<Stats>({ liveEvents: undefined, uploads: undefined, files: undefined })
+  const [stats, setStats] = useState<Stats>({ liveEvents: undefined, activeJobs: undefined, uploads: undefined, files: undefined })
   const [loading, setLoading] = useState(true)
   const [lastError, setLastError] = useState<string | null>(null)
   const mounted = useRef(true)
@@ -25,7 +26,12 @@ export default function useDashboardStats(pollInterval = 10000) {
         if (data && mounted.current) {
           setStats({
             liveEvents: typeof data.liveEvents === 'number' ? data.liveEvents : null,
-            uploads: typeof data.uploads === 'number' ? data.uploads : null,
+            activeJobs: typeof data.activeJobs === 'number'
+              ? data.activeJobs
+              : (typeof data.liveEvents === 'number' ? data.liveEvents : null),
+            uploads: typeof data.uploadsToday === 'number'
+              ? data.uploadsToday
+              : (typeof data.uploads === 'number' ? data.uploads : null),
             files: typeof data.files === 'number' ? data.files : null,
           })
         }
@@ -34,7 +40,13 @@ export default function useDashboardStats(pollInterval = 10000) {
         const keys: Partial<Stats> = {}
         try {
           const r1 = await fetchWithAuth(`${API_BASE}/api/stats/events`)
-          if (r1.ok) { const jd = await r1.json().catch(()=>null); if (jd && typeof jd.count === 'number') keys.liveEvents = jd.count }
+          if (r1.ok) {
+            const jd = await r1.json().catch(()=>null)
+            if (jd && typeof jd.count === 'number') {
+              keys.liveEvents = jd.count
+              keys.activeJobs = jd.count
+            }
+          }
         } catch (e) {}
         try {
           const r2 = await fetchWithAuth(`${API_BASE}/api/stats/uploads`)
