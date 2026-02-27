@@ -365,14 +365,14 @@ const css = `
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--textw-muted);
   font-weight: 600;
 }
 
 .mfc-options-toggle {
   border: 1px solid var(--border-md);
-  background: var(--surface);
-  color: var(--text-secondary);
+  background: var(--gold-light, #f0bc44);
+  color: var(--navy);
   border-radius: 999px;
   padding: 4px 10px;
   font-family: var(--font-mono);
@@ -848,11 +848,6 @@ export default function ManualFetchClient() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [positions, setPositions] = useState("1,2");
-  const [preset, setPreset] = useState<"speed" | "balanced">("speed");
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [verboseDebug, setVerboseDebug] = useState(false);
-  const [listRetries, setListRetries] = useState(1);
-  const [autoRealignAfterFetch, setAutoRealignAfterFetch] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [live, setLive] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState("Idle");
@@ -867,19 +862,6 @@ export default function ManualFetchClient() {
     if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
   }, [messages]);
 
-  const applyPreset = (next: "speed" | "balanced") => {
-    setPreset(next);
-    if (next === "speed") {
-      setVerboseDebug(false);
-      setListRetries(1);
-      setAutoRealignAfterFetch(false);
-    } else {
-      setVerboseDebug(false);
-      setListRetries(2);
-      setAutoRealignAfterFetch(true);
-    }
-  };
-
   const handleStart = async () => {
     if (!startDate || !endDate) { alert("Please select start and end dates before starting."); return; }
     if (startDate > endDate) { alert("Start date must be earlier than or equal to end date."); return; }
@@ -887,9 +869,9 @@ export default function ManualFetchClient() {
       start: startDate,
       end: endDate,
       options: {
-        verboseDebug,
-        listRetries,
-        autoRealignAfterFetch,
+        verboseDebug: false,
+        listRetries: 2,
+        autoRealignAfterFetch: true,
       },
     };
     if (selected.length) body.branches = selected;
@@ -988,13 +970,6 @@ export default function ManualFetchClient() {
     }
   };
 
-  const handleStop = () => {
-    if (esRef.current) { esRef.current.close(); esRef.current = null; }
-    setMessages(m => [...m, { type: "stopped", message: "Stopped by user" }]);
-    setPhaseLabel("Stopped by user");
-    setLive(false);
-  };
-
   return (
     <div className="mfc-root">
       <style>{css}</style>
@@ -1067,81 +1042,11 @@ export default function ManualFetchClient() {
 
           <div className="mfc-options">
             <div className="mfc-options-head">
-              <div className="mfc-options-title">Fetch Options</div>
-              <button
-                type="button"
-                className="mfc-options-toggle"
-                onClick={() => setOptionsOpen(v => !v)}
-              >
-                {optionsOpen ? "Close" : "Open"}
-              </button>
+              <div className="mfc-options-title">Fetch Mode</div>
             </div>
             <div className="mfc-options-purpose">
-              Controls speed vs reliability per fetch run.
+              Auto realign is always enabled. Empty folders and corrupted/incomplete CSV files are cleaned automatically after fetch.
             </div>
-
-            {optionsOpen && (
-              <div className="mfc-options-body">
-                <div className="mfc-preset-row">
-                  <button
-                    type="button"
-                    className={`mfc-preset ${preset === "speed" ? "active" : ""}`}
-                    onClick={() => applyPreset("speed")}
-                  >
-                    Speed First
-                  </button>
-                  <button
-                    type="button"
-                    className={`mfc-preset ${preset === "balanced" ? "active" : ""}`}
-                    onClick={() => applyPreset("balanced")}
-                  >
-                    Balanced (Self-Heal)
-                  </button>
-                </div>
-
-                <div className="mfc-options-grid">
-                  <div className="mfc-toggle">
-                    <div className="mfc-toggle-label">
-                      <span className="mfc-toggle-title">Verbose Debug Logs</span>
-                      <span className="mfc-toggle-desc">Equivalent to POS_DEBUG</span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={verboseDebug}
-                      onChange={e => { setPreset("balanced"); setVerboseDebug(e.target.checked); }}
-                    />
-                  </div>
-
-                  <div className="mfc-toggle">
-                    <div className="mfc-toggle-label">
-                      <span className="mfc-toggle-title">List Retries</span>
-                      <span className="mfc-toggle-desc">Equivalent to POS_LIST_RETRIES</span>
-                    </div>
-                    <select
-                      className="mfc-select"
-                      value={listRetries}
-                      onChange={e => { setPreset("balanced"); setListRetries(Number(e.target.value)); }}
-                    >
-                      <option value={1}>1</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                    </select>
-                  </div>
-
-                  <div className="mfc-toggle">
-                    <div className="mfc-toggle-label">
-                      <span className="mfc-toggle-title">Auto Realign After Fetch</span>
-                      <span className="mfc-toggle-desc">Equivalent to POS_AUTO_REALIGN_AFTER_FETCH</span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={autoRealignAfterFetch}
-                      onChange={e => { setPreset("balanced"); setAutoRealignAfterFetch(e.target.checked); }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="mfc-progress">
@@ -1161,10 +1066,7 @@ export default function ManualFetchClient() {
 
           <div className="mfc-actions">
             <button className="mfc-btn mfc-btn-accent" onClick={handleStart} disabled={live}>
-              <Ico.Play /> {live ? "Running…" : "Start Fetch"}
-            </button>
-            <button className="mfc-btn mfc-btn-ghost" onClick={handleStop}>
-              <Ico.Square /> Stop
+              <Ico.Play /> {live ? "Running…" : "Start Fetch + Auto Realign"}
             </button>
           </div>
 

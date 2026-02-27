@@ -644,6 +644,7 @@ export default function CombineClient() {
   const [outFile, setOutFile] = useState("");
   const [skipTypes, setSkipTypes] = useState<string[]>([]);
   const [skipDb, setSkipDb] = useState(false);
+  const [forceRecombine, setForceRecombine] = useState(false);
   const [live, setLive] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [filesProcessed, setFilesProcessed] = useState(0);
@@ -727,6 +728,7 @@ export default function CombineClient() {
           ...(outFile && { outFile }),
           ...(skipTypes.length > 0 && { skipTypes }),
           ...(skipDb && { skipDb }),
+          ...(forceRecombine && { forceRecombine }),
         }),
       });
 
@@ -869,6 +871,15 @@ export default function CombineClient() {
               />
               <span><strong>⚡ CSV-Only Mode</strong> — Skip database inserts (5-10x faster, generates CSV only)</span>
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px", background: "var(--surface-3)", borderRadius: "var(--radius-sm)", cursor: "pointer", marginTop: "8px" }}>
+              <input
+                type="checkbox"
+                checked={forceRecombine}
+                onChange={e => setForceRecombine(e.target.checked)}
+                style={{ width: "18px", height: "18px", cursor: "pointer" }}
+              />
+              <span><strong>🔁 Force Recombine</strong> — Ignore "already-combined" skip checks and reprocess current files.</span>
+            </label>
           </div>
 
           <div className="cmb-config-info">
@@ -876,6 +887,25 @@ export default function CombineClient() {
               📁 Scans all CSV files in <strong>{workdir || "latest"}</strong> and merges them into a single master dataset.
             </p>
           </div>
+
+          {!live && skippedExistingFiles > 0 && (
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "10px 12px",
+                borderRadius: "var(--radius-sm)",
+                background: "rgba(232,168,32,0.12)",
+                border: "1px solid rgba(232,168,32,0.35)",
+                color: "var(--text-secondary)",
+                fontSize: "12px",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Skipped existing combined files:</strong> {skippedExistingFiles} file(s)
+              {skippedExistingRows > 0 ? `, ${skippedExistingRows} row(s)` : ""}. If you need to regenerate outputs after refetch/cleanup,
+              enable <strong>Force Recombine</strong> and run combine again.
+            </div>
+          )}
 
           <div className="cmb-actions">
             <button className="cmb-btn cmb-btn-accent" onClick={handleStart} disabled={live}>

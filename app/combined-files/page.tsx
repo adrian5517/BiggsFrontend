@@ -56,36 +56,59 @@ function parseCsvTable(csvText: string) {
 
 export default function CombinedFilesPage() {
   const [files, setFiles] = useState<any[]>([]);
+  const [listError, setListError] = useState<string>("");
   const [totalFiles, setTotalFiles] = useState(0);
   const [listPage, setListPage] = useState(1);
   const [listLimit] = useState(20);
   const [listBranchFilter, setListBranchFilter] = useState("");
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [lastMergedAt, setLastMergedAt] = useState<string>("");
   const [selected, setSelected] = useState<any>(null);
   const [content, setContent] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
+  const [fullDistinctBranches, setFullDistinctBranches] = useState<number | null>(null);
+  const [fullBranchOptions, setFullBranchOptions] = useState<string[]>([]);
   const [modalSearchInput, setModalSearchInput] = useState("");
   const [modalBranchInput, setModalBranchInput] = useState("");
   const [modalPage, setModalPage] = useState(1);
   const modalPageSize = 200;
 
   async function load() {
-    const query = new URLSearchParams({
-      page: String(listPage),
-      limit: String(listLimit),
-    });
+    try {
+      setListError("");
+      const query = new URLSearchParams({
+        page: String(listPage),
+        limit: String(listLimit),
+      });
 
-    if (listBranchFilter) {
-      query.set("branch", listBranchFilter);
+      const res = await fetch(`${API_BASE}/api/files/combined?${query.toString()}`);
+      if (!res.ok) {
+        setListError(`Failed to load combined files (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      const fetchedFiles = Array.isArray(data.files) ? data.files : [];
+      setTotalFiles(Number(data.total || 0));
+      setAvailableBranches(Array.isArray(data.branches) ? data.branches : []);
+      setFiles(fetchedFiles);
+
+      if (fetchedFiles.length > 0) {
+        const latest = fetchedFiles
+          .map((entry: any) => new Date(entry?.mtime || 0).getTime())
+          .filter((value: number) => Number.isFinite(value) && value > 0)
+          .sort((a: number, b: number) => b - a)[0];
+        setLastMergedAt(latest ? new Date(latest).toLocaleString() : "");
+      } else {
+        setLastMergedAt("");
+      }
+    } catch (e) {
+      setListError("Failed to fetch combined files. Check backend/API connection.");
+      setFiles([]);
+      setTotalFiles(0);
+      setAvailableBranches([]);
+      setLastMergedAt("");
     }
-
-    const res = await fetch(`${API_BASE}/api/files/combined?${query.toString()}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    setTotalFiles(Number(data.total || 0));
-    setAvailableBranches(Array.isArray(data.branches) ? data.branches : []);
-    setFiles(Array.isArray(data.files) ? data.files : []);
   }
 
   useEffect(() => {
@@ -96,25 +119,66 @@ export default function CombinedFilesPage() {
     setModalPage(1);
   }, [modalSearchInput, modalBranchInput, selected?.path]);
 
+  async function loadPreview(filePath: string, branchFilter?: string) {
+    try {
+      const query = new URLSearchParams({ file: filePath });
+      const normalizedBranch = String(branchFilter || "").trim().toUpperCase();
+      if (normalizedBranch) query.set("branch", normalizedBranch);
+
+      const res = await fetch(`${API_BASE}/api/files/combined/view?${query.toString()}`);
+      if (!res.ok) {
+        setContent("Failed to load preview");
+        setHeaders([]);
+        setRows([]);
+        return;
+      }
+
+      const text = await res.text();
+      setContent(text);
+      const parsed = parseCsvTable(text);
+      setHeaders(parsed.headers);
+      setRows(parsed.rows);
+    } catch (e) {
+      setContent("Failed to load preview. Check backend/API connection.");
+      setHeaders([]);
+      setRows([]);
+    }
+  }
+
   async function openPreview(file: any) {
     setSelected(file);
     setModalSearchInput("");
     setModalBranchInput("");
+    setFullDistinctBranches(null);
+    setFullBranchOptions([]);
     try { window.dispatchEvent(new CustomEvent('sidebar:set', { detail: { collapsed: true, hideMobile: true } })); } catch (e) {}
     
-    const res = await fetch(`${API_BASE}/api/files/combined/view?file=${encodeURIComponent(file.path)}`);
-    if (!res.ok) {
-      setContent("Failed to load preview");
-      setHeaders([]);
-      setRows([]);
-      return;
-    }
+    try {
+      await loadPreview(file.path, "");
 
-    const text = await res.text();
-    setContent(text);
-    const parsed = parseCsvTable(text);
-    setHeaders(parsed.headers);
-    setRows(parsed.rows);
+      // Fetch full-file summary to avoid preview-only branch count bias
+      fetch(`${API_BASE}/api/files/combined/summary?file=${encodeURIComponent(file.path)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((summary) => {
+          if (summary && typeof summary.distinctBranches === "number") {
+            setFullDistinctBranches(summary.distinctBranches);
+          }
+          const summaryBranches = Array.isArray(summary?.branches)
+            ? summary.branches.map((value: any) => String(value || "").trim().toUpperCase()).filter(Boolean)
+            : [];
+          if (summaryBranches.length) {
+            setFullBranchOptions(Array.from(new Set<string>(summaryBranches)).sort());
+            return;
+          }
+          const topBranches = Array.isArray(summary?.topBranches)
+            ? summary.topBranches.map((item: any) => String(item?.branch || "").trim().toUpperCase()).filter(Boolean)
+            : [];
+          if (topBranches.length) {
+            setFullBranchOptions(Array.from(new Set<string>(topBranches)).sort());
+          }
+        })
+        .catch(() => {});
+    } catch (e) {}
   }
 
   const normalizedHeaders = headers.map((header) => String(header || "").trim().toLowerCase());
@@ -158,6 +222,9 @@ export default function CombinedFilesPage() {
   }
 
   const modalBranches = Array.from(modalBranchSet).sort();
+  const modalBranchOptions = fullBranchOptions.length
+    ? fullBranchOptions
+    : (modalBranches.length ? modalBranches : KNOWN_BRANCHES);
 
   const doesRowMatchBranch = (row: string[], selectedBranch: string) => {
     const normalizedSelected = cleanCell(selectedBranch).toUpperCase();
@@ -208,6 +275,7 @@ export default function CombinedFilesPage() {
   const modalStart = filteredRows.length === 0 ? 0 : (modalPage - 1) * modalPageSize + 1;
   const modalEnd = filteredRows.length === 0 ? 0 : Math.min(modalPage * modalPageSize, filteredRows.length);
   const pagedFilteredRows = filteredRows.slice((modalPage - 1) * modalPageSize, modalPage * modalPageSize);
+  const listBranchOptions = Array.from(new Set([...(availableBranches || []), ...KNOWN_BRANCHES])).sort();
 
   return (
     <div className="p-6 space-y-6">
@@ -224,6 +292,10 @@ export default function CombinedFilesPage() {
       <div>
         <h1 className="text-2xl font-semibold">Combined Files</h1>
         <p className="text-sm text-slate-500">Separate page for combiner outputs (different from Masterfile).</p>
+        <p className="text-xs text-slate-600 mt-1">
+          Last Combined/Merged: <span className="font-medium text-slate-800">{lastMergedAt || "No combined file yet"}</span>
+        </p>
+        {listError ? <p className="text-xs text-red-600 mt-1">{listError}</p> : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -236,13 +308,14 @@ export default function CombinedFilesPage() {
           className="border p-2 rounded w-56 text-sm"
         >
           <option value="">All branches</option>
-          {availableBranches.map((branch) => (
+          {listBranchOptions.map((branch) => (
             <option key={branch} value={branch}>{branch}</option>
           ))}
         </select>
         <span className="text-sm text-slate-600">
           {totalFiles === 0 ? "No records" : `Showing ${listStart}-${listEnd} of ${totalFiles}`}
         </span>
+        <span className="text-xs text-slate-500">Branch filter applies to preview rows.</span>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -322,11 +395,17 @@ export default function CombinedFilesPage() {
                 />
                 <select
                   value={modalBranchInput}
-                  onChange={(e) => setModalBranchInput(e.target.value)}
+                  onChange={async (e) => {
+                    const value = e.target.value;
+                    setModalBranchInput(value);
+                    if (selected?.path) {
+                      await loadPreview(selected.path, value);
+                    }
+                  }}
                   className="border p-2 rounded w-56 text-black"
                 >
                   <option value="">All branches</option>
-                  {(modalBranches.length ? modalBranches : KNOWN_BRANCHES).map((b) => (
+                  {modalBranchOptions.map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
@@ -341,6 +420,7 @@ export default function CombinedFilesPage() {
                   Select All
                 </button>
                 <div className="ml-auto flex items-center gap-2 text-sm text-slate-700">
+                  <span className="text-xs text-slate-600">Distinct branches: {fullDistinctBranches ?? modalBranches.length}</span>
                   <span>{filteredRows.length === 0 ? "No rows" : `Showing ${modalStart}-${modalEnd} of ${filteredRows.length}`}</span>
                   <button
                     type="button"

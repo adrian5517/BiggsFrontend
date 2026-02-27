@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { fetchWithAuth } from "@/utils/auth";
+import { fetchWithAuth, getAccessToken } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
@@ -600,9 +600,18 @@ export default function MissingScanClient() {
   const [progressValue, setProgressValue] = useState(0);
   const [live, setLive] = useState(false);
   const [queueing, setQueueing] = useState(false);
-  const [reingesting, setReingesting] = useState(false);
   const [queueStatus, setQueueStatus] = useState("");
+  const queueEsRef = useRef<EventSource | null>(null);
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    return () => {
+      if (queueEsRef.current) {
+        queueEsRef.current.close();
+        queueEsRef.current = null;
+      }
+    };
+  }, []);
 
   const getFailureReason = (row: any) => {
     const missingCount = Array.isArray(row?.missingDates) ? row.missingDates.length : 0;
@@ -619,16 +628,18 @@ export default function MissingScanClient() {
     return "Partial gap (late upload or ingest failure)";
   };
 
-  const handleStartScan = async () => {
-    const body: any = { positions };
+  const runScan = async ({ showStartMessages = true }: { showStartMessages?: boolean } = {}) => {
+    const body: any = { positions, source: "report_pos_sended" };
     if (branches.length) body.branches = branches;
     if (start) body.start = start;
     if (end) body.end = end;
 
     setLive(true);
     setProgressValue(20);
-    setMessages(m => [...m, `Scan started (${branches.length} branches)`]);
-    setMessages(m => [...m, `Date range: ${start || "auto"} to ${end || "auto"}`]);
+    if (showStartMessages) {
+      setMessages(m => [...m, `Scan started (${branches.length} branches)`]);
+      setMessages(m => [...m, `Date range: ${start || "auto"} to ${end || "auto"}`]);
+    }
 
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
@@ -660,6 +671,53 @@ export default function MissingScanClient() {
       setProgressValue(0);
       setLive(false);
     }
+  };
+
+  const handleStartScan = async () => {
+    await runScan({ showStartMessages: true });
+  };
+
+  const watchQueueJobAndRefresh = (jobId: string) => {
+    if (!jobId) return;
+
+    if (queueEsRef.current) {
+      queueEsRef.current.close();
+      queueEsRef.current = null;
+    }
+
+    const token = getAccessToken();
+    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
+    const streamUrl = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(jobId)}${tq}`;
+    const es = new EventSource(streamUrl);
+    queueEsRef.current = es;
+
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data || "{}");
+        if (data?.type === "complete") {
+          setQueueStatus("✅ Queue fetch completed. Refreshing missing scan...");
+          es.close();
+          queueEsRef.current = null;
+          void runScan({ showStartMessages: false }).then(() => {
+            setQueueStatus("✅ Missing dates auto-refreshed.");
+          });
+          return;
+        }
+        if (data?.type === "error") {
+          setQueueStatus(`Queue job failed: ${data?.message || "Unknown error"}`);
+          es.close();
+          queueEsRef.current = null;
+        }
+      } catch {
+        // ignore malformed stream messages
+      }
+    };
+
+    es.onerror = () => {
+      setQueueStatus("Queue stream disconnected. Results will refresh on next scan.");
+      es.close();
+      queueEsRef.current = null;
+    };
   };
 
   const handleStop = () => {
@@ -712,74 +770,14 @@ export default function MissingScanClient() {
         return;
       }
 
-      setQueueStatus(`✅ Queued successfully! Job ID: ${json.jobId || 'N/A'}`);
-      // Add helpful message about re-scanning
-      setTimeout(() => {
-        setQueueStatus("💡 Tip: Run scan again after fetch completes to see updated results.");
-      }, 3000);
-      setTimeout(() => setQueueStatus(""), 10000);
+      setQueueStatus(`✅ Queued successfully! Job ID: ${json.jobId || 'N/A'}. Waiting for completion...`);
+      if (json?.jobId) {
+        watchQueueJobAndRefresh(String(json.jobId));
+      }
     } catch (e) {
       setQueueStatus(`Error: ${String(e)}`);
     } finally {
       setQueueing(false);
-    }
-  };
-
-  const handleReIngest = async (targetRow?: any) => {
-    if (!scanResult || !scanResult.results || scanResult.results.length === 0) {
-      setQueueStatus("No scan results to re-ingest.");
-      return;
-    }
-    if (!scanResult.start || !scanResult.end) {
-      setQueueStatus("Missing scan date range. Run scan again before re-ingest.");
-      return;
-    }
-
-    setReingesting(true);
-    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
-    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end}) • ${scopeText}...`);
-
-    try {
-      const body: any = {
-        start: scanResult.start,
-        end: scanResult.end,
-        mode: 're-ingest-missing-scan',
-      };
-
-      if (targetRow) {
-        body.branches = [String(targetRow.branch)];
-        body.positions = [String(targetRow.pos)];
-      } else {
-        if (branches.length) {
-          body.branches = branches;
-        } else if (scanResult.results && scanResult.results.length) {
-          body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
-        }
-
-        if (positions.length) {
-          body.positions = positions;
-        } else if (scanResult.results && scanResult.results.length) {
-          body.positions = [...new Set(scanResult.results.map((r: any) => String(r.pos)))];
-        }
-      }
-
-      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const json = await resp.json();
-      if (!resp.ok) {
-        setQueueStatus(`Re-ingest failed: ${json?.message ?? 'Request failed'}`);
-        return;
-      }
-
-      setQueueStatus(`✅ Re-ingest queued! Job ID: ${json?.jobId || 'N/A'}. Check Fetch Logs for progress.`);
-    } catch (e) {
-      setQueueStatus(`Re-ingest failed: ${String(e)}`);
-    } finally {
-      setReingesting(false);
     }
   };
 
@@ -893,21 +891,10 @@ export default function MissingScanClient() {
                 {scanResult && <span className="msc-panel-count">{scanResult.results?.length || 0} rows</span>}
                 {scanResult && scanResult.results && scanResult.results.length > 0 && (
                   <button
-                    className="msc-btn msc-btn-gold"
-                    style={{ padding: '6px 12px', fontSize: '11px' }}
-                    onClick={handleReIngest}
-                    disabled={reingesting || queueing}
-                  >
-                    <Ico.Play />
-                    {reingesting ? 'Re-ingesting...' : 'Re-ingest'}
-                  </button>
-                )}
-                {scanResult && scanResult.results && scanResult.results.length > 0 && (
-                  <button
                     className="msc-btn msc-btn-sky"
                     style={{ padding: '6px 12px', fontSize: '11px' }}
                     onClick={handleQueueFetchScan}
-                    disabled={queueing || reingesting}
+                    disabled={queueing}
                   >
                     <Ico.Play />
                     {queueing ? 'Queuing...' : 'Queue Fetch Scan'}
@@ -931,7 +918,7 @@ export default function MissingScanClient() {
             )}
             {scanResult && scanResult.results && scanResult.results.length > 0 && (
               <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                Tip: Use <strong>Queue Fetch Scan</strong> for missing files. Use <strong>Re-ingest</strong> only when files already exist but processing failed/wrong.
+                Tip: Use <strong>Queue Fetch Scan</strong> for missing files. Re-run scan after fetch completes to refresh missing dates.
               </div>
             )}
             <div className="msc-result-body" style={{ maxHeight: "760px", overflowY: "auto" }}>
@@ -1010,18 +997,9 @@ export default function MissingScanClient() {
                                       className="msc-btn msc-btn-sky"
                                       style={{ padding: '4px 8px', fontSize: '10px' }}
                                       onClick={() => handleQueueFetchScan(r)}
-                                      disabled={queueing || reingesting || !hasMissingDates}
+                                      disabled={queueing || !hasMissingDates}
                                     >
                                       Queue Fetch
-                                    </button>
-                                    <button
-                                      className="msc-btn msc-btn-gold"
-                                      style={{ padding: '4px 8px', fontSize: '10px' }}
-                                      onClick={() => handleReIngest(r)}
-                                      disabled={queueing || reingesting || !hasMissingDates || Number(r?.existingCount ?? 0) <= 0}
-                                      title={Number(r?.existingCount ?? 0) <= 0 ? 'Re-ingest is available only when files were already ingested. Use Queue Fetch first.' : 'Re-process existing ingested files for this row'}
-                                    >
-                                      Re-ingest
                                     </button>
                                   </div>
                                 </td>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchWithAuth } from "@/utils/auth";
+import { fetchWithAuth, getAccessToken } from "@/utils/auth";
 
 const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
@@ -267,8 +267,8 @@ export default function MissingScanResultTableClient() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [queueing, setQueueing] = useState(false);
-  const [reingesting, setReingesting] = useState(false);
   const [queueStatus, setQueueStatus] = useState("");
+  const [queueWatchJobId, setQueueWatchJobId] = useState<string>("");
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
@@ -313,19 +313,57 @@ export default function MissingScanResultTableClient() {
     setSelectedBranches((prev) => prev.includes(branch) ? prev.filter((b) => b !== branch) : [...prev, branch]);
   };
 
-  const refreshFromStorage = () => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(MISSING_SCAN_RESULT_KEY);
-    if (!raw) {
-      setQueueStatus("No cached scan result found.");
+  const refreshFromStorage = async () => {
+    const fallbackFromLocal = () => {
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem(MISSING_SCAN_RESULT_KEY);
+      if (!raw) {
+        setQueueStatus("No cached scan result found.");
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        setScanResult(parsed);
+        setQueueStatus("Loaded cached scan results.");
+      } catch {
+        setQueueStatus("Failed to parse cached results.");
+      }
+    };
+
+    if (!scanResult?.start || !scanResult?.end) {
+      fallbackFromLocal();
       return;
     }
+
+    setQueueStatus("Refreshing from latest folder...");
     try {
-      const parsed = JSON.parse(raw);
-      setScanResult(parsed);
-      setQueueStatus("Results refreshed.");
+      const body: any = {
+        start: scanResult.start,
+        end: scanResult.end,
+        source: "report_pos_sended",
+      };
+      if (selectedBranches.length) body.branches = selectedBranches;
+
+      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/missing/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const json = await resp.json();
+      if (!resp.ok) {
+        setQueueStatus(`Refresh failed: ${json?.message ?? "Request failed"}`);
+        return;
+      }
+
+      setScanResult(json);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(MISSING_SCAN_RESULT_KEY, JSON.stringify(json));
+        window.dispatchEvent(new CustomEvent("missing-scan-result", { detail: json }));
+      }
+      setQueueStatus("✅ Results refreshed from latest folder.");
     } catch {
-      setQueueStatus("Failed to parse cached results.");
+      fallbackFromLocal();
     }
   };
 
@@ -376,7 +414,12 @@ export default function MissingScanResultTableClient() {
         window.localStorage.setItem(MISSING_SCAN_RESULT_KEY, JSON.stringify(json));
         window.dispatchEvent(new CustomEvent("missing-scan-result", { detail: json }));
       }
-      setQueueStatus(json?.queued ? `✅ Queued! Job ID: ${json.jobId}. Tip: Re-run scan after fetch completes.` : "Scan completed");
+      if (json?.queued && json?.jobId) {
+        setQueueWatchJobId(String(json.jobId));
+        setQueueStatus(`✅ Queued! Job ID: ${json.jobId}. Waiting for completion...`);
+      } else {
+        setQueueStatus("Scan completed");
+      }
     } catch (error) {
       setQueueStatus(`Queue failed: ${String(error)}`);
     } finally {
@@ -384,61 +427,44 @@ export default function MissingScanResultTableClient() {
     }
   };
 
-  const handleReIngest = async (targetRow?: any) => {
-    if (!scanResult?.start || !scanResult?.end) {
-      setQueueStatus("Missing scan date range. Run scan again before re-ingest.");
-      return;
-    }
+  useEffect(() => {
+    if (!queueWatchJobId) return;
 
-    setReingesting(true);
-    const scopeText = targetRow ? `${targetRow.branch} POS${targetRow.pos}` : 'selected scope';
-    setQueueStatus(`Starting re-ingest (${scanResult.start} to ${scanResult.end}) • ${scopeText}...`);
+    const token = getAccessToken();
+    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
+    const streamUrl = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(queueWatchJobId)}${tq}`;
+    const es = new EventSource(streamUrl);
 
-    try {
-      const body: any = {
-        start: scanResult.start,
-        end: scanResult.end,
-        mode: "re-ingest-missing-scan",
-      };
-
-      if (targetRow) {
-        body.branches = [String(targetRow.branch)];
-        body.positions = [String(targetRow.pos)];
-      } else {
-        if (selectedBranches.length) {
-          body.branches = selectedBranches;
-        } else if (scanResult?.results && scanResult.results.length) {
-          body.branches = [...new Set(scanResult.results.map((r: any) => r.branch))];
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data || "{}");
+        if (data?.type === "complete") {
+          setQueueStatus("✅ Queue fetch completed. Refreshing missing scan...");
+          es.close();
+          setQueueWatchJobId("");
+          void refreshFromStorage();
+          return;
         }
-
-        if (scanResult?.results && scanResult.results.length) {
-          const branchSet = new Set(body.branches || []);
-          const scopedRows = branchSet.size
-            ? scanResult.results.filter((r: any) => branchSet.has(r.branch))
-            : scanResult.results;
-          body.positions = [...new Set(scopedRows.map((r: any) => String(r.pos)))];
+        if (data?.type === "error") {
+          setQueueStatus(`Queue job failed: ${data?.message || "Unknown error"}`);
+          es.close();
+          setQueueWatchJobId("");
         }
+      } catch {
+        // ignore malformed stream messages
       }
+    };
 
-      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    es.onerror = () => {
+      setQueueStatus("Queue stream disconnected. Results will refresh on next manual refresh.");
+      es.close();
+      setQueueWatchJobId("");
+    };
 
-      const json = await resp.json();
-      if (!resp.ok) {
-        setQueueStatus(`Re-ingest failed: ${json?.message ?? "Request failed"}`);
-        return;
-      }
-
-      setQueueStatus(`✅ Re-ingest queued! Job ID: ${json?.jobId || "N/A"}. Check Fetch Logs for progress.`);
-    } catch (error) {
-      setQueueStatus(`Re-ingest failed: ${String(error)}`);
-    } finally {
-      setReingesting(false);
-    }
-  };
+    return () => {
+      es.close();
+    };
+  }, [queueWatchJobId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -490,10 +516,7 @@ export default function MissingScanResultTableClient() {
         <div className="msr-head-right">
           <span className="msr-count">{rows.length} rows</span>
           <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-lg" onClick={refreshFromStorage}>Refresh Results</button>
-          <button className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1 rounded-lg" onClick={handleReIngest} disabled={reingesting || queueing}>
-            {reingesting ? "Re-ingesting..." : "Re-ingest"}
-          </button>
-          <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1 rounded-lg border border-white" onClick={handleQueueFetchScan} disabled={queueing || reingesting}>
+          <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1 rounded-lg border border-white" onClick={handleQueueFetchScan} disabled={queueing}>
             {queueing ? "Queuing..." : "Queue Fetch Scan"}
           </button>
         </div>
@@ -507,7 +530,7 @@ export default function MissingScanResultTableClient() {
         ) : null}
 
         <div style={{ marginBottom: 10, fontSize: 11, color: "#6d7f9e", fontFamily: "DM Mono, monospace" }}>
-          Tip: Use <strong>Queue Fetch Scan</strong> for missing files. Use <strong>Re-ingest</strong> only when files already exist but processing failed/wrong.
+          Tip: Use <strong>Queue Fetch Scan</strong> for missing files. Re-run scan after fetch completes to refresh missing dates.
         </div>
 
         <div className="msr-branch-filter">
@@ -616,17 +639,9 @@ export default function MissingScanResultTableClient() {
                               <button
                                 className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1 rounded-lg"
                                 onClick={() => handleQueueFetchScan(row)}
-                                disabled={queueing || reingesting || !hasMissingDates}
+                                disabled={queueing || !hasMissingDates}
                               >
                                 Queue Fetch
-                              </button>
-                              <button
-                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-lg"
-                                onClick={() => handleReIngest(row)}
-                                disabled={queueing || reingesting || !hasMissingDates || Number(row?.existingCount ?? 0) <= 0}
-                                title={Number(row?.existingCount ?? 0) <= 0 ? 'Re-ingest is available only when files were already ingested. Use Queue Fetch first.' : 'Re-process existing ingested files for this row'}
-                              >
-                                Re-ingest
                               </button>
                             </div>
                           </td>
