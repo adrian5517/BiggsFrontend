@@ -628,6 +628,30 @@ export default function MissingScanClient() {
     return "Partial gap (late upload or ingest failure)";
   };
 
+  const getFailureBreakdown = (row: any) => {
+    const missingDates = Array.isArray(row?.missingDates) ? row.missingDates : [];
+    const byDate = row?.failureByDate && typeof row.failureByDate === 'object' ? row.failureByDate : {};
+
+    const counts: Record<string, number> = {
+      "Corrupted File": 0,
+      "File Not Found": 0,
+      Missing: 0,
+      Error: 0,
+      Other: 0,
+    };
+
+    for (const date of missingDates) {
+      const raw = String(byDate?.[date] || '').toLowerCase();
+      if (raw.includes('corrupted')) counts["Corrupted File"] += 1;
+      else if (raw.includes('file not found')) counts["File Not Found"] += 1;
+      else if (raw.includes('missing')) counts.Missing += 1;
+      else if (raw.includes('error')) counts.Error += 1;
+      else counts.Other += 1;
+    }
+
+    return Object.entries(counts).filter(([, value]) => value > 0);
+  };
+
   const runScan = async ({ showStartMessages = true }: { showStartMessages?: boolean } = {}) => {
     const body: any = { positions, source: "report_pos_sended" };
     if (branches.length) body.branches = branches;
@@ -989,7 +1013,17 @@ export default function MissingScanClient() {
                                   )}
                                 </td>
                                 <td style={{ padding: '8px 6px', color: 'var(--text-secondary)', minWidth: '220px' }}>
-                                  {getFailureReason(r)}
+                                  {(() => {
+                                    const breakdown = getFailureBreakdown(r);
+                                    if (!breakdown.length) return <span>{getFailureReason(r)}</span>;
+                                    return (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+                                        {breakdown.map(([label, value]) => (
+                                          <span key={`${label}-${value}`}>{label}: {value}</span>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                                 <td style={{ padding: '8px 6px', minWidth: '240px' }}>
                                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>

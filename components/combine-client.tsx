@@ -641,9 +641,7 @@ function ConsoleMessage({ m }: { m: any }) {
 
 export default function CombineClient() {
   const [workdir, setWorkdir] = useState("latest");
-  const [outFile, setOutFile] = useState("");
   const [skipTypes, setSkipTypes] = useState<string[]>([]);
-  const [skipDb, setSkipDb] = useState(false);
   const [forceRecombine, setForceRecombine] = useState(false);
   const [live, setLive] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
@@ -725,9 +723,7 @@ export default function CombineClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workdir: workdir || "latest",
-          ...(outFile && { outFile }),
           ...(skipTypes.length > 0 && { skipTypes }),
-          ...(skipDb && { skipDb }),
           ...(forceRecombine && { forceRecombine }),
         }),
       });
@@ -821,19 +817,6 @@ export default function CombineClient() {
                 onChange={e => setWorkdir(e.target.value)}
               />
             </div>
-            <div className="cmb-field">
-              <label className="cmb-label">
-                <span className="cmb-label-icon"><Ico.File /></span>
-                Output Filename (optional)
-              </label>
-              <input
-                className="cmb-input"
-                type="text"
-                placeholder="master_output.csv"
-                value={outFile}
-                onChange={e => setOutFile(e.target.value)}
-              />
-            </div>
           </div>
 
           {/* Skip File Types
@@ -860,18 +843,9 @@ export default function CombineClient() {
             </div>
           </div> */}
 
-          {/* Skip DB Inserts Option */}
+          {/* Combine options */}
           <div style={{ marginBottom: "16px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px", background: "var(--surface-3)", borderRadius: "var(--radius-sm)", cursor: "pointer" }}>
-              <input 
-                type="checkbox"
-                checked={skipDb}
-                onChange={e => setSkipDb(e.target.checked)}
-                style={{ width: "18px", height: "18px", cursor: "pointer" }}
-              />
-              <span><strong>⚡ CSV-Only Mode</strong> — Skip database inserts (5-10x faster, generates CSV only)</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px", background: "var(--surface-3)", borderRadius: "var(--radius-sm)", cursor: "pointer", marginTop: "8px" }}>
               <input
                 type="checkbox"
                 checked={forceRecombine}

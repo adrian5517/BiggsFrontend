@@ -11,6 +11,9 @@ const KNOWN_BRANCHES = [
   "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"
 ];
 const KNOWN_BRANCH_SET = new Set(KNOWN_BRANCHES);
+const DEFAULT_COMBINED_HEADERS = [
+  "POS", "OR", "ITEM CODE", "QUANTITY", "UNIT PRICE", "AMOUNT", "DISCOUNT", "DEPARTMENT CODE", "DATE", "TIME", "DISCOUNT CODE", "TYPE CODE", "VAT FLAG", "VAT DIV", "VAT AMOUNT", "VAT DISCOUNT", "VAT PRICE", "TRANSACTION NUMBER", "PRODUCT NAME", "DEPARTMENT NAME", "DISCOUNT NAME", "TRANSACTION TYPE", "DAYPART", "PAYMENT CODE", "PAYMENT NAME", "PHONE NUMBER", "BRANCH"
+];
 
 function parseCsvLine(line: string) {
   const cells: string[] = [];
@@ -49,8 +52,32 @@ function parseCsvTable(csvText: string) {
     .filter((line) => line.trim() !== "");
 
   if (!lines.length) return { headers: [], rows: [] };
-  const headers = parseCsvLine(lines[0]);
-  const rows = lines.slice(1).map(parseCsvLine);
+  const firstRow = parseCsvLine(lines[0]);
+  const normalized = firstRow.map((value) => String(value || "").trim().toLowerCase());
+  const hasHeaderShape = normalized.includes("branch") && normalized.includes("pos") && normalized.includes("date");
+
+  const headers = hasHeaderShape ? firstRow : DEFAULT_COMBINED_HEADERS;
+  const rows = (hasHeaderShape ? lines.slice(1) : lines)
+    .map(parseCsvLine)
+    .filter((row) => {
+      const c0 = String(row?.[0] || "").trim().toLowerCase();
+      const c1 = String(row?.[1] || "").trim().toLowerCase();
+      const c2 = String(row?.[2] || "").trim().toLowerCase();
+      const c4 = String(row?.[4] || "").trim().toLowerCase();
+      const c5 = String(row?.[5] || "").trim().toLowerCase();
+
+      const looksLikeHeaderDataRow =
+        c0 === "pos" ||
+        c1 === "or" ||
+        c1 === "invoice" ||
+        c2 === "item code" ||
+        c2 === "ite_code" ||
+        c4 === "unit price" ||
+        c4 === "unt_pric" ||
+        c5 === "amount";
+
+      return !looksLikeHeaderDataRow;
+    });
   return { headers, rows };
 }
 

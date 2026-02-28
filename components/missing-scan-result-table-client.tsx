@@ -13,12 +13,23 @@ type ScanRow = {
   totalDates?: number;
   missingDates?: string[];
   existingCount?: number;
+  failureByDate?: Record<string, string>;
 };
 
 function formatShortDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function normalizeFailureLabel(raw: string) {
+  const text = String(raw || "").trim();
+  const lowered = text.toLowerCase();
+  if (lowered.includes("corrupted")) return "Corrupted File";
+  if (lowered.includes("file not found")) return "File Not Found";
+  if (lowered.includes("missing")) return "Missing";
+  if (lowered.includes("error")) return "Error";
+  return text || "Unknown";
 }
 
 const css = `
@@ -287,6 +298,30 @@ export default function MissingScanResultTableClient() {
       return "Likely no/late submission or repeated fetch failure";
     }
     return "Partial gap (late upload or ingest failure)";
+  };
+
+  const getFailureBreakdown = (row: any) => {
+    const missingDates = Array.isArray(row?.missingDates) ? row.missingDates : [];
+    const byDate = row?.failureByDate && typeof row.failureByDate === "object" ? row.failureByDate : {};
+
+    const counts: Record<string, number> = {
+      "Corrupted File": 0,
+      "File Not Found": 0,
+      Missing: 0,
+      Error: 0,
+      Other: 0,
+    };
+
+    for (const date of missingDates) {
+      const raw = String(byDate?.[date] || "").toLowerCase();
+      if (raw.includes("corrupted")) counts["Corrupted File"] += 1;
+      else if (raw.includes("file not found")) counts["File Not Found"] += 1;
+      else if (raw.includes("missing")) counts.Missing += 1;
+      else if (raw.includes("error")) counts.Error += 1;
+      else counts.Other += 1;
+    }
+
+    return Object.entries(counts).filter(([, value]) => value > 0);
   };
 
   useEffect(() => {
@@ -613,6 +648,11 @@ export default function MissingScanResultTableClient() {
                                   <span style={{ fontFamily: "DM Mono, monospace", fontSize: 11, color: "#374a6b" }}>
                                     {formatShortDate(row.missingDates[0])} – {formatShortDate(row.missingDates[row.missingDates.length - 1])} ({row.missingDates.length})
                                   </span>
+                                  {row?.failureByDate?.[row.missingDates[0]] ? (
+                                    <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#6d7f9e" }}>
+                                      First: {normalizeFailureLabel(String(row.failureByDate[row.missingDates[0]] || ""))}
+                                    </span>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold px-2 py-1 rounded"
@@ -624,7 +664,12 @@ export default function MissingScanResultTableClient() {
                                 {isOpen && (
                                   <div style={{ marginTop: 6, maxHeight: 140, overflowY: "auto", border: "1px solid rgba(15,31,61,0.12)", borderRadius: 6, padding: "6px 8px", background: "#fff" }}>
                                     {row.missingDates.map((date, i) => (
-                                      <div key={`${date}-${i}`}>{formatShortDate(date)}</div>
+                                      <div key={`${date}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontFamily: "DM Mono, monospace", fontSize: 11 }}>
+                                        <span>{formatShortDate(date)}</span>
+                                        <span style={{ color: "#6d7f9e" }}>
+                                          {normalizeFailureLabel(String(row?.failureByDate?.[date] || "Missing"))}
+                                        </span>
+                                      </div>
                                     ))}
                                   </div>
                                 )}
@@ -633,7 +678,21 @@ export default function MissingScanResultTableClient() {
                               <span className="msr-none">None</span>
                             )}
                           </td>
-                          <td>{getFailureReason(row)}</td>
+                          <td>
+                            {(() => {
+                              const breakdown = getFailureBreakdown(row);
+                              if (!breakdown.length) return <span>{getFailureReason(row)}</span>;
+                              return (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  {breakdown.map(([label, value]) => (
+                                    <span key={`${label}-${value}`} style={{ fontFamily: "DM Mono, monospace", fontSize: 11, color: "#374a6b" }}>
+                                      {label}: {value}
+                                    </span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </td>
                           <td>
                             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                               <button
