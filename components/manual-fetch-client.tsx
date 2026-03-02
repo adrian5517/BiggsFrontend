@@ -921,10 +921,26 @@ export default function ManualFetchClient() {
             if (msg.includes("collecting")) setPhaseLabel("Collecting file list");
             else if (msg.includes("selection summary")) setPhaseLabel("Filtering latest files");
             else if (msg.includes("attempting fetch")) setPhaseLabel("Downloading CSV files");
+            else if (msg.includes("downloading file")) setPhaseLabel("Downloading current file");
+            else if (msg.includes("processing csv rows")) setPhaseLabel("Processing downloaded CSV");
             else if (msg.includes("auto realign started")) setPhaseLabel("Auto realign in progress");
             else if (msg.includes("auto realign finished")) setPhaseLabel("Auto realign finished");
             else if (d.message) setPhaseLabel(String(d.message));
             if (typeof d.totalRows === "number") setRowsInserted(d.totalRows);
+          }
+
+          if (d.type === "file-start") {
+            const completed = Number(d.filesCompleted || 0);
+            const total = Number(d.filesTotal || filesTotal || 0);
+            if (total > 0) {
+              setFilesTotal(total);
+              setFilesCompleted(completed);
+              const basePct = Math.max(0, Math.min(99, Math.round((completed / total) * 100)));
+              setProgressPct(basePct);
+              setPhaseLabel(`Processing file ${Math.min(total, completed + 1)} of ${total}`);
+            } else {
+              setPhaseLabel("Processing file");
+            }
           }
 
           if (d.type === "file-complete") {

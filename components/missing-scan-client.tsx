@@ -5,6 +5,7 @@ import { fetchWithAuth, getAccessToken } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
+const MISSING_SCAN_SOURCE_KEY = "missingScan:sourceMode";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
 
 /* ─────────────────────────── CSS ─────────────────────────── */
@@ -601,8 +602,22 @@ export default function MissingScanClient() {
   const [live, setLive] = useState(false);
   const [queueing, setQueueing] = useState(false);
   const [queueStatus, setQueueStatus] = useState("");
+  const [scanSource, setScanSource] = useState<"report_pos_sended" | "latest">("report_pos_sended");
   const queueEsRef = useRef<EventSource | null>(null);
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(MISSING_SCAN_SOURCE_KEY);
+    if (saved === "report_pos_sended" || saved === "latest") {
+      setScanSource(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MISSING_SCAN_SOURCE_KEY, scanSource);
+  }, [scanSource]);
 
   useEffect(() => {
     return () => {
@@ -631,6 +646,8 @@ export default function MissingScanClient() {
   const getFailureBreakdown = (row: any) => {
     const missingDates = Array.isArray(row?.missingDates) ? row.missingDates : [];
     const byDate = row?.failureByDate && typeof row.failureByDate === 'object' ? row.failureByDate : {};
+    const statusByDate = row?.statusByDate && typeof row.statusByDate === 'object' ? row.statusByDate : {};
+    const sourceByDate = Object.keys(byDate).length ? byDate : statusByDate;
 
     const counts: Record<string, number> = {
       "Corrupted File": 0,
@@ -641,7 +658,7 @@ export default function MissingScanClient() {
     };
 
     for (const date of missingDates) {
-      const raw = String(byDate?.[date] || '').toLowerCase();
+      const raw = String(sourceByDate?.[date] || '').toLowerCase();
       if (raw.includes('corrupted')) counts["Corrupted File"] += 1;
       else if (raw.includes('file not found')) counts["File Not Found"] += 1;
       else if (raw.includes('missing')) counts.Missing += 1;
@@ -652,8 +669,38 @@ export default function MissingScanClient() {
     return Object.entries(counts).filter(([, value]) => value > 0);
   };
 
+  const getScanAlerts = (result: any): string[] => {
+    if (!result || typeof result !== "object") return [];
+    const alerts: string[] = [];
+    const pushAlert = (value: any) => {
+      const text = String(value || "").trim();
+      if (text) alerts.push(text);
+    };
+
+    pushAlert(result.failureReason);
+
+    if (Array.isArray(result.warnings)) {
+      for (const warning of result.warnings) pushAlert(warning);
+    }
+
+    if (Array.isArray(result.failures)) {
+      for (const failure of result.failures) {
+        const source = String(failure?.source || "scan").trim();
+        const reason = String(failure?.reason || "").trim();
+        if (reason) pushAlert(`${source}: ${reason}`);
+      }
+    }
+
+    return Array.from(new Set(alerts));
+  };
+
+  const scanAlerts = getScanAlerts(scanResult);
+  const statusDetailUnavailableReason = scanResult?.failureReason
+    ? `Detailed report status unavailable: ${String(scanResult.failureReason)}`
+    : "";
+
   const runScan = async ({ showStartMessages = true }: { showStartMessages?: boolean } = {}) => {
-    const body: any = { positions, source: "report_pos_sended" };
+    const body: any = { positions, source: scanSource };
     if (branches.length) body.branches = branches;
     if (start) body.start = start;
     if (end) body.end = end;
@@ -663,6 +710,7 @@ export default function MissingScanClient() {
     if (showStartMessages) {
       setMessages(m => [...m, `Scan started (${branches.length} branches)`]);
       setMessages(m => [...m, `Date range: ${start || "auto"} to ${end || "auto"}`]);
+      setMessages(m => [...m, `Source: ${scanSource === "latest" ? "Local latest folder" : "Scraper (report_pos_sended)"}`]);
     }
 
     try {
@@ -684,6 +732,14 @@ export default function MissingScanClient() {
       setCurrentPage(1);
       setMessages(m => [...m, `Scan complete: ${json?.results?.length || 0} rows generated`]);
       setMessages(m => [...m, `Date range: ${json?.start || 'N/A'} to ${json?.end || 'N/A'}`]);
+      if (json?.failureReason) {
+        setMessages(m => [...m, `Failure reason: ${json.failureReason}`]);
+      }
+      if (Array.isArray(json?.warnings) && json.warnings.length) {
+        for (const warning of json.warnings) {
+          setMessages(m => [...m, `Warning: ${String(warning)}`]);
+        }
+      }
       setProgressValue(100);
       setLive(false);
       if (typeof window !== "undefined") {
@@ -912,6 +968,24 @@ export default function MissingScanClient() {
                 <Ico.Results /> Scan Results
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid var(--border)', borderRadius: '999px', padding: '2px', background: '#fff' }}>
+                  <button
+                    type="button"
+                    className="msc-btn"
+                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'report_pos_sended' ? 'var(--sky-muted)' : 'transparent', color: 'var(--navy)' }}
+                    onClick={() => setScanSource('report_pos_sended')}
+                  >
+                    Scraper
+                  </button>
+                  <button
+                    type="button"
+                    className="msc-btn"
+                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'latest' ? 'var(--gold-muted)' : 'transparent', color: 'var(--navy)' }}
+                    onClick={() => setScanSource('latest')}
+                  >
+                    Local
+                  </button>
+                </div>
                 {scanResult && <span className="msc-panel-count">{scanResult.results?.length || 0} rows</span>}
                 {scanResult && scanResult.results && scanResult.results.length > 0 && (
                   <button
@@ -938,6 +1012,18 @@ export default function MissingScanClient() {
                     <Ico.Play /> Re-scan Now
                   </button>
                 )}
+              </div>
+            )}
+            {scanAlerts.length > 0 && (
+              <div style={{ padding: '10px 12px', background: 'var(--gold-muted)', borderBottom: '1px solid var(--sky-border)' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--navy)', marginBottom: '4px' }}>Scan Warnings</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {scanAlerts.map((alert, idx) => (
+                    <div key={`${alert}-${idx}`} style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                      • {alert}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {scanResult && scanResult.results && scanResult.results.length > 0 && (
@@ -1015,7 +1101,7 @@ export default function MissingScanClient() {
                                 <td style={{ padding: '8px 6px', color: 'var(--text-secondary)', minWidth: '220px' }}>
                                   {(() => {
                                     const breakdown = getFailureBreakdown(r);
-                                    if (!breakdown.length) return <span>{getFailureReason(r)}</span>;
+                                    if (!breakdown.length) return <span>{statusDetailUnavailableReason || getFailureReason(r)}</span>;
                                     return (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
                                         {breakdown.map(([label, value]) => (
