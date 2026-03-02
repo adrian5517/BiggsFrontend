@@ -182,9 +182,18 @@ export async function fetchWithAuth(input: RequestInfo, init?: RequestInit, trie
     res = await fetch(input, { ...(init || {}), headers, credentials: init?.credentials ?? 'include' })
   } catch (fetchErr) {
     // Network error (CORS, server down, DNS). Return a synthetic Response so callers can handle gracefully.
+    // NOTE: status=0 is invalid for Response constructor and will throw; use 599 as network-error sentinel.
     try {
-      const body = JSON.stringify({ message: String(fetchErr) });
-      return new Response(body, { status: 0, statusText: 'network-error', headers: { 'Content-Type': 'application/json' } }) as Response;
+      const body = JSON.stringify({
+        message: String(fetchErr),
+        code: 'NETWORK_ERROR',
+        url: typeof input === 'string' ? input : (input as any)?.url || null,
+      });
+      return new Response(body, {
+        status: 599,
+        statusText: 'network-error',
+        headers: { 'Content-Type': 'application/json' },
+      }) as Response;
     } catch (e) {
       // Fallback: rethrow if Response construction fails
       throw fetchErr;

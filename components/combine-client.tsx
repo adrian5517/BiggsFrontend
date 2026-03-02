@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
+const COMBINE_ACTIVE_JOB_KEY = "combine_active_job_v1";
 
 /* ─────────────────────────── CSS ─────────────────────────── */
 const css = `
@@ -639,21 +640,37 @@ function ConsoleMessage({ m }: { m: any }) {
   );
 }
 
+function pushCappedMessage(list: any[], entry: any, max = 400) {
+  const next = [...list, entry];
+  if (next.length <= max) return next;
+  return next.slice(next.length - max);
+}
+
 export default function CombineClient() {
   const [workdir, setWorkdir] = useState("latest");
   const [skipTypes, setSkipTypes] = useState<string[]>([]);
-  const [forceRecombine, setForceRecombine] = useState(false);
   const [live, setLive] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
+  const [connectionError, setConnectionError] = useState("");
+  const [resumeMode, setResumeMode] = useState(false);
+  const [resumeJobIdInput, setResumeJobIdInput] = useState("");
+  const [resumableJobId, setResumableJobId] = useState("");
   const [filesProcessed, setFilesProcessed] = useState(0);
   const [filesTotal, setFilesTotal] = useState(0);
+  const [polledFilesProcessed, setPolledFilesProcessed] = useState(0);
+  const [polledFilesTotal, setPolledFilesTotal] = useState(0);
   const [currentFile, setCurrentFile] = useState("");
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [hasFileStarted, setHasFileStarted] = useState(false);
   const [totalInsertedRows, setTotalInsertedRows] = useState(0);
   const [skippedExistingFiles, setSkippedExistingFiles] = useState(0);
   const [skippedExistingRows, setSkippedExistingRows] = useState(0);
   const consoleRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  const statusPollRef = useRef<any>(null);
+  const suppressSseErrorRef = useRef(false);
+  const terminalHandledRef = useRef(false);
 
   // Extract progress info from messages
   useEffect(() => {
@@ -666,7 +683,7 @@ export default function CombineClient() {
     let skippedRows = 0;
 
     for (const msg of messages) {
-      if (msg.type === "progress" && msg.message) {
+      if ((msg.type === "progress" || msg.type === "message" || msg.type === "file-start") && msg.message) {
         const text = msg.message;
         
         // Look for patterns like "Processing file 3/10"
@@ -685,6 +702,15 @@ export default function CombineClient() {
         // Get estimated time remaining
         if (msg.estimatedSecondsRemaining !== undefined) {
           timeRemaining = msg.estimatedSecondsRemaining;
+        }
+
+        // Look for initial discovery like "Found 120 rd5000 files to process"
+        const discoveredMatch = text.match(/found\s+(\d+)\s+rd5000\s+files/i);
+        if (discoveredMatch) {
+          const discoveredTotal = parseInt(discoveredMatch[1], 10);
+          if (Number.isFinite(discoveredTotal) && discoveredTotal > 0) {
+            total = Math.max(total, discoveredTotal);
+          }
         }
       }
 
@@ -710,73 +736,324 @@ export default function CombineClient() {
     }
   }, [messages]);
 
-  const handleStart = async () => {
+  useEffect(() => {
+    if (!live) {
+      setElapsedSeconds(0);
+      setHasFileStarted(false);
+      return;
+    }
+
+    const startedAt = Date.now();
+    setElapsedSeconds(0);
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [live]);
+
+  useEffect(() => {
+    if (!live) return;
+    const fileStarted = messages.some((m) => m?.type === "file-start");
+    if (fileStarted) {
+      setHasFileStarted(true);
+      return;
+    }
+
+    if (filesProcessed > 0 || polledFilesProcessed > 0) {
+      setHasFileStarted(true);
+    }
+  }, [messages, filesProcessed, polledFilesProcessed, live]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COMBINE_ACTIVE_JOB_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const jobId = String(parsed?.jobId || "").trim();
+      const savedWorkdir = String(parsed?.workdir || "").trim();
+      if (jobId) {
+        setResumableJobId(jobId);
+        setResumeJobIdInput(jobId);
+      }
+      if (savedWorkdir) {
+        setWorkdir(savedWorkdir);
+      }
+    } catch {
+      localStorage.removeItem(COMBINE_ACTIVE_JOB_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopStatusPolling();
+      closeEventSource(true);
+    };
+  }, []);
+
+  const saveActiveJob = (jobId: string, force = false) => {
+    const payload = {
+      jobId,
+      workdir: workdir || "latest",
+      forceRecombine: !!force,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(COMBINE_ACTIVE_JOB_KEY, JSON.stringify(payload));
+    setResumableJobId(jobId);
+    setResumeJobIdInput(jobId);
+  };
+
+  const clearActiveJob = () => {
+    localStorage.removeItem(COMBINE_ACTIVE_JOB_KEY);
+    setResumableJobId("");
+  };
+
+  const setNetworkBanner = (url?: string) => {
+    const hintUrl = url || API_BASE;
+    setConnectionError(`Cannot reach backend at ${hintUrl}. Ensure backend server is running and API base URL is correct.`);
+  };
+
+  const stopStatusPolling = () => {
+    if (statusPollRef.current) {
+      clearInterval(statusPollRef.current);
+      statusPollRef.current = null;
+    }
+  };
+
+  const closeEventSource = (silent = false) => {
+    if (silent) {
+      suppressSseErrorRef.current = true;
+    }
+    if (esRef.current) {
+      try {
+        esRef.current.close();
+      } catch {}
+      esRef.current = null;
+    }
+  };
+
+  const resetRunGuards = () => {
+    terminalHandledRef.current = false;
+  };
+
+  const handleTerminalOnce = (handler: () => void) => {
+    if (terminalHandledRef.current) return;
+    terminalHandledRef.current = true;
+    handler();
+  };
+
+  const startStatusPolling = (jobId: string) => {
+    stopStatusPolling();
+
+    const poll = async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/api/fetch/jobs/${encodeURIComponent(jobId)}/status`);
+        if (!res.ok) {
+          if (res.status === 599) {
+            const body = await res.json().catch(() => null as any);
+            setNetworkBanner(body?.url);
+          }
+          return;
+        }
+
+        const statusJson = await res.json();
+        const status = String(statusJson?.status || "").toLowerCase();
+        const completed = Number(statusJson?.filesCompleted || 0);
+        const total = Number(statusJson?.filesTotal || 0);
+
+        if (Number.isFinite(completed)) setPolledFilesProcessed(Math.max(0, completed));
+        if (Number.isFinite(total)) setPolledFilesTotal(Math.max(0, total));
+
+        if (["complete", "completed"].includes(status)) {
+          handleTerminalOnce(() => {
+            stopStatusPolling();
+            closeEventSource(true);
+            setLive(false);
+            setMessages((m) => [...m, { type: "complete", message: `Job ${jobId} already completed.` }]);
+            clearActiveJob();
+          });
+          return;
+        }
+
+        if (["failed", "error", "stopped", "cancelled"].includes(status)) {
+          handleTerminalOnce(() => {
+            stopStatusPolling();
+            closeEventSource(true);
+            setLive(false);
+            setMessages((m) => [...m, { type: "error", message: `Job ${jobId} is ${status}.` }]);
+            clearActiveJob();
+          });
+        }
+      } catch {}
+    };
+
+    void poll();
+    statusPollRef.current = setInterval(() => {
+      void poll();
+    }, 3000);
+  };
+
+  const connectToJobStream = (jobId: string) => {
+    const token = getAccessToken();
+    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
+    const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(jobId)}${tq}`;
+
+    closeEventSource(true);
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onopen = () => {
+      setMessages((m) => pushCappedMessage(m, { type: "message", message: `Connected to stream for job: ${jobId}` }));
+    };
+
+    es.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        setMessages((m) => pushCappedMessage(m, d));
+
+        if (d.type === "complete") {
+          handleTerminalOnce(() => {
+            stopStatusPolling();
+            closeEventSource(true);
+            setLive(false);
+            clearActiveJob();
+          });
+        }
+
+        if (d.type === "error") {
+          handleTerminalOnce(() => {
+            stopStatusPolling();
+            closeEventSource(true);
+            setLive(false);
+            setResumableJobId(jobId);
+          });
+        }
+      } catch {
+        setMessages((m) => pushCappedMessage(m, { type: "message", raw: ev.data }));
+      }
+    };
+
+    es.onerror = () => {
+      if (suppressSseErrorRef.current) {
+        suppressSseErrorRef.current = false;
+        return;
+      }
+      handleTerminalOnce(() => {
+        stopStatusPolling();
+        setMessages((m) => [...m, { type: "error", message: "SSE connection error (you can resume by Job ID)" }]);
+        closeEventSource(true);
+        setLive(false);
+        setResumableJobId(jobId);
+      });
+    };
+  };
+
+  const startCombine = async (force = false) => {
+    stopStatusPolling();
+    resetRunGuards();
+    setConnectionError("");
+    setResumeMode(false);
     setMessages([]);
+    setPolledFilesProcessed(0);
+    setPolledFilesTotal(0);
     setTotalInsertedRows(0);
     setSkippedExistingFiles(0);
     setSkippedExistingRows(0);
     setLive(true);
 
     try {
+      const payload: any = {
+        workdir: workdir || "latest",
+      };
+      if (skipTypes.length > 0) payload.skipTypes = skipTypes;
+      if (force) payload.forceRecombine = true;
+
       const res = await fetchWithAuth(`${API_BASE}/api/fetch/combine/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workdir: workdir || "latest",
-          ...(skipTypes.length > 0 && { skipTypes }),
-          ...(forceRecombine && { forceRecombine }),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
+        if (res.status === 599) {
+          const body = await res.json().catch(() => null as any);
+          setNetworkBanner(body?.url);
+          setMessages((m) => [...m, { type: "error", message: body?.message || "Network error" }]);
+          setLive(false);
+          return;
+        }
         setLive(false);
-        setMessages(m => [...m, { type: "error", message: `HTTP ${res.status}: ${res.statusText}` }]);
+        setMessages((m) => [...m, { type: "error", message: `HTTP ${res.status}: ${res.statusText}` }]);
         return;
       }
 
       const json = await res.json();
-      setMessages(m => [...m, { type: "queued", message: `Job queued: ${json.jobId}` }]);
-
-      const token = getAccessToken();
-      const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
-      const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(json.jobId)}${tq}`;
-
-      if (esRef.current) esRef.current.close();
-      const es = new EventSource(url);
-      esRef.current = es;
-
-      es.onmessage = ev => {
-        try {
-          const d = JSON.parse(ev.data);
-          setMessages(m => [...m, d]);
-          if (d.type === "complete" || d.type === "error") {
-            es.close();
-            setLive(false);
-          }
-        } catch {
-          setMessages(m => [...m, { type: "message", raw: ev.data }]);
-        }
-      };
-
-      es.onerror = () => {
-        setMessages(m => [...m, { type: "error", message: "SSE connection error" }]);
-        es.close();
+      const jobId = String(json?.jobId || "").trim();
+      if (!jobId) {
         setLive(false);
-      };
+        setMessages((m) => [...m, { type: "error", message: "No jobId returned from server." }]);
+        return;
+      }
+
+      saveActiveJob(jobId, force);
+      setMessages((m) => [...m, { type: "queued", message: `Job queued: ${jobId}${force ? " (recombine)" : ""}` }]);
+      connectToJobStream(jobId);
+      startStatusPolling(jobId);
     } catch (e) {
-      setMessages(m => [...m, { type: "error", message: String(e) }]);
+      setMessages((m) => [...m, { type: "error", message: String(e) }]);
       setLive(false);
     }
   };
 
-  const handleStop = () => {
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
+  const handleResume = async () => {
+    const jobId = String((resumeJobIdInput || resumableJobId || "")).trim();
+    if (!jobId) {
+      setMessages((m) => [...m, { type: "error", message: "Enter a Job ID to resume." }]);
+      return;
     }
+
+    stopStatusPolling();
+    resetRunGuards();
+    setConnectionError("");
+    setResumeMode(true);
+    setLive(true);
+    setPolledFilesProcessed(0);
+    setPolledFilesTotal(0);
+    saveActiveJob(jobId);
+    setMessages((m) => [...m, { type: "queued", message: `Resuming stream for job: ${jobId}` }]);
+    connectToJobStream(jobId);
+    startStatusPolling(jobId);
+  };
+
+  const handleStart = async () => {
+    await startCombine(false);
+  };
+
+  const handleRecombine = async () => {
+    await startCombine(true);
+  };
+
+  const handleStop = () => {
+    stopStatusPolling();
+    setResumeMode(false);
+    closeEventSource(true);
     setMessages(m => [...m, { type: "stopped", message: "Stopped by user" }]);
     setLive(false);
   };
+
+  const hasResumeJob = !!String(resumeJobIdInput || resumableJobId || "").trim();
+  const displayFilesProcessed = Math.max(filesProcessed, polledFilesProcessed);
+  const displayFilesTotal = Math.max(filesTotal, polledFilesTotal);
+  const chipCanResume = !live && hasResumeJob;
+  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+  const showSlowPrepareWarning = live && elapsedSeconds >= 30 && !hasFileStarted;
+  const showResumeFallback = live && resumeMode && elapsedSeconds >= 20 && !hasFileStarted && displayFilesProcessed === 0;
+  const statusLabel = live ? "Running" : hasResumeJob ? "Resumable" : "Idle";
+  const statusStyle = live
+    ? { color: "#22c55e", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)" }
+    : hasResumeJob
+      ? { color: "#f59e0b", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }
+      : { color: "var(--text-muted)", background: "var(--surface-3)", border: "1px solid var(--border-md)" };
 
   return (
     <div className="cmb-root">
@@ -843,17 +1120,29 @@ export default function CombineClient() {
             </div>
           </div> */}
 
-          {/* Combine options */}
+          {/* Resume by Job ID */}
           <div style={{ marginBottom: "16px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px", background: "var(--surface-3)", borderRadius: "var(--radius-sm)", cursor: "pointer" }}>
+            <div className="cmb-field" style={{ marginBottom: "10px" }}>
+              <label className="cmb-label">Resume by Job ID</label>
               <input
-                type="checkbox"
-                checked={forceRecombine}
-                onChange={e => setForceRecombine(e.target.checked)}
-                style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                className="cmb-input"
+                type="text"
+                placeholder="Paste jobId (auto-filled if available)"
+                value={resumeJobIdInput}
+                onChange={e => setResumeJobIdInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !live && resumeJobIdInput.trim()) {
+                    e.preventDefault();
+                    void handleResume();
+                  }
+                }}
               />
-              <span><strong>🔁 Force Recombine</strong> — Ignore "already-combined" skip checks and reprocess current files.</span>
-            </label>
+            </div>
+            {resumableJobId && !live && (
+              <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "-2px" }}>
+                Last resumable job: <strong>{resumableJobId}</strong>
+              </div>
+            )}
           </div>
 
           <div className="cmb-config-info">
@@ -861,6 +1150,23 @@ export default function CombineClient() {
               📁 Scans all CSV files in <strong>{workdir || "latest"}</strong> and merges them into a single master dataset.
             </p>
           </div>
+
+          {connectionError && (
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "10px 12px",
+                borderRadius: "var(--radius-sm)",
+                background: "rgba(220,38,38,0.10)",
+                border: "1px solid rgba(220,38,38,0.35)",
+                color: "#991b1b",
+                fontSize: "12px",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Backend unreachable:</strong> {connectionError}
+            </div>
+          )}
 
           {!live && skippedExistingFiles > 0 && (
             <div
@@ -882,8 +1188,37 @@ export default function CombineClient() {
           )}
 
           <div className="cmb-actions">
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                height: "34px",
+                padding: "0 12px",
+                borderRadius: "999px",
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+                cursor: chipCanResume ? "pointer" : "default",
+                ...statusStyle,
+              }}
+              title={hasResumeJob ? `Last job: ${resumeJobIdInput || resumableJobId}${chipCanResume ? " (click to resume)" : ""}` : "No resumable job yet"}
+              onClick={() => {
+                if (chipCanResume) {
+                  void handleResume();
+                }
+              }}
+            >
+              {statusLabel}
+            </span>
             <button className="cmb-btn cmb-btn-accent" onClick={handleStart} disabled={live}>
               <Ico.Play /> {live ? "Running…" : "Start Combine"}
+            </button>
+            <button className="cmb-btn cmb-btn-accent" onClick={handleRecombine} disabled={live}>
+              <Ico.Play /> {live ? "Running…" : "Recombine"}
+            </button>
+            <button className="cmb-btn cmb-btn-ghost" onClick={handleResume} disabled={live || !resumeJobIdInput.trim()}>
+              <Ico.Play /> Resume Job
             </button>
             <button className="cmb-btn cmb-btn-ghost" onClick={handleStop}>
               <Ico.Square /> Stop
@@ -891,19 +1226,23 @@ export default function CombineClient() {
           </div>
 
           {/* Progress Card */}
-          {live && (filesProcessed > 0 || filesTotal > 0) && (
+          {live && (
             <div className="cmb-progress-card active">
               <div className="cmb-progress-header">
                 <span className="cmb-progress-title">
                   <div className="cmb-spinner" />
-                  Processing Files
+                  {displayFilesTotal > 0 ? "Processing Files" : "Preparing Combine Job"}
                 </span>
                 <div className="cmb-progress-stats">
                   <div className="cmb-stat-item">
                     <span className="cmb-stat-label">Files:</span>
-                    <span className="cmb-stat-value">{filesProcessed}</span>
+                    <span className="cmb-stat-value">{displayFilesProcessed}</span>
                     <span style={{ color: "var(--text-muted)" }}>/</span>
-                    <span className="cmb-stat-value">{filesTotal}</span>
+                    <span className="cmb-stat-value">{displayFilesTotal}</span>
+                  </div>
+                  <div className="cmb-stat-item">
+                    <span className="cmb-stat-label">⏱ Elapsed:</span>
+                    <span className="cmb-stat-value">{elapsedLabel}</span>
                   </div>
                   {estimatedTimeRemaining > 0 && (
                     <div className="cmb-stat-item" style={{ marginLeft: "auto" }}>
@@ -914,21 +1253,21 @@ export default function CombineClient() {
                 </div>
               </div>
 
-              {filesTotal > 0 && (
+              {displayFilesTotal > 0 ? (
                 <>
                   <div className="cmb-progress-bar-wrapper">
                     <div className="cmb-progress-bar">
                       <div
                         className="cmb-progress-bar-fill"
-                        style={{ width: `${(filesProcessed / filesTotal) * 100}%` }}
+                        style={{ width: `${(displayFilesProcessed / Math.max(1, displayFilesTotal)) * 100}%` }}
                       />
                     </div>
                     <div className="cmb-progress-text">
                       <span className="cmb-progress-label">
-                        {filesProcessed} of {filesTotal} files combined
+                        {displayFilesProcessed} of {displayFilesTotal} files combined
                       </span>
                       <span className="cmb-progress-percent">
-                        {Math.round((filesProcessed / filesTotal) * 100)}%
+                        {Math.round((displayFilesProcessed / Math.max(1, displayFilesTotal)) * 100)}%
                       </span>
                     </div>
                   </div>
@@ -953,6 +1292,55 @@ export default function CombineClient() {
                     </div>
                   )}
                 </>
+              ) : (
+                <div
+                  style={{
+                    marginTop: "8px",
+                    padding: "10px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--surface-3)",
+                    border: "1px solid var(--border)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                      Waiting for first progress update from backend…
+                    </span>
+                    {showSlowPrepareWarning && (
+                      <span style={{ fontSize: "11px", color: "#b45309" }}>
+                        Backend still preparing lookups… this can take longer on large date ranges.
+                      </span>
+                    )}
+                    {showResumeFallback && (
+                      <span style={{ fontSize: "11px", color: "#1d4ed8" }}>
+                        Resume seems idle. You can start a fresh recombine now.
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {showResumeFallback && (
+                      <button
+                        className="cmb-btn cmb-btn-accent"
+                        style={{ padding: "7px 10px", fontSize: "11px" }}
+                        onClick={() => {
+                          setMessages((m) => [...m, { type: "message", message: "Starting fresh recombine from fallback action…" }]);
+                          void handleRecombine();
+                        }}
+                      >
+                        Start Recombine Now
+                      </button>
+                    )}
+                    <div style={{ display: "flex", gap: "2px" }}>
+                      {[...Array(5)].map((_, i) => (
+                        <div key={i} className="cmb-loader-bar" style={{ height: `${8 + i * 2}px` }} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}

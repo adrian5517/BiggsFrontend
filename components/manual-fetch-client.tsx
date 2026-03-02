@@ -5,6 +5,7 @@ import { fetchWithAuth, getAccessToken } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
+const MANUAL_FETCH_PROGRESS_KEY = "manualFetch:lastProgress";
 
 /* ─────────────────────────── CSS ─────────────────────────── */
 const css = `
@@ -702,6 +703,44 @@ const css = `
   border-top: 1px solid rgba(255,255,255,0.04);
   margin: 10px 0;
 }
+
+.mfc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 31, 61, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.mfc-modal {
+  width: min(420px, calc(100vw - 32px));
+  background: var(--surface);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
+}
+
+.mfc-modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mfc-modal-text {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mfc-modal-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 `;
 
 /* ─────────────────────────── Icons ─────────────────────────── */
@@ -855,12 +894,325 @@ export default function ManualFetchClient() {
   const [filesCompleted, setFilesCompleted] = useState(0);
   const [rowsInserted, setRowsInserted] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
+  const [currentJobId, setCurrentJobId] = useState("");
+  const [resumeJobId, setResumeJobId] = useState("");
+  const [resumeStatus, setResumeStatus] = useState("");
+  const [confirmFreshOpen, setConfirmFreshOpen] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const consoleRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
   }, [messages]);
+
+  const persistProgress = (snapshot: any) => {
+    try {
+      if (typeof window === "undefined") return;
+      window.localStorage.setItem(
+        MANUAL_FETCH_PROGRESS_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          ...snapshot,
+        })
+      );
+    } catch {
+      // ignore persistence errors
+    }
+  };
+
+  const clearSavedProgress = (resetUI = false) => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(MANUAL_FETCH_PROGRESS_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    setResumeJobId("");
+    setResumeStatus("");
+
+    if (resetUI) {
+      setMessages([]);
+      setCurrentJobId("");
+      setPhaseLabel("Idle");
+      setFilesTotal(0);
+      setFilesCompleted(0);
+      setRowsInserted(0);
+      setProgressPct(0);
+      setLive(false);
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      stopStatusPolling();
+    }
+  };
+
+  const stopStatusPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const mapStatusToPhase = (status: string) => {
+    const s = String(status || "").toLowerCase();
+    if (s === "completed" || s === "complete") return "Completed";
+    if (s === "failed") return "Failed";
+    if (s === "running") return "Ingestion running";
+    if (s === "queued") return "Queued";
+    return "Running";
+  };
+
+  const applyStatusSnapshot = (jobId: string, statusJson: any, asResume = false) => {
+    const filesTotalValue = Number(statusJson?.filesTotal || 0);
+    const filesCompletedValue = Number(statusJson?.filesCompleted || 0);
+    const rowsInsertedValue = Number(statusJson?.rowsInserted || 0);
+    const progressValue = Number.isFinite(Number(statusJson?.progress))
+      ? Math.max(0, Math.min(100, Number(statusJson.progress)))
+      : (filesTotalValue > 0 ? Math.round((filesCompletedValue / filesTotalValue) * 100) : 0);
+    const phase = mapStatusToPhase(String(statusJson?.status || ""));
+    const statusRaw = String(statusJson?.status || "");
+    const terminal = phase === "Completed" || phase === "Failed";
+
+    setCurrentJobId(jobId);
+    setResumeJobId(jobId);
+    setResumeStatus(statusRaw);
+    setFilesTotal(filesTotalValue);
+    setFilesCompleted(filesCompletedValue);
+    setRowsInserted(rowsInsertedValue);
+    setProgressPct(progressValue);
+    setPhaseLabel(phase);
+    setLive(!terminal);
+
+    if (asResume) {
+      setMessages((m) => [
+        ...m,
+        {
+          type: "resume-status",
+          message: `Resumed job ${jobId}`,
+          status: statusJson?.status,
+          filesCompleted: filesCompletedValue,
+          filesTotal: filesTotalValue,
+          rowsInserted: rowsInsertedValue,
+          progress: progressValue,
+        },
+      ]);
+    }
+
+    persistProgress({
+      jobId,
+      status: statusRaw || null,
+      phase,
+      filesTotal: filesTotalValue,
+      filesCompleted: filesCompletedValue,
+      rowsInserted: rowsInsertedValue,
+      progressPct: progressValue,
+      live: !terminal,
+    });
+
+    if (terminal) {
+      stopStatusPolling();
+    }
+  };
+
+  const fetchJobStatus = async (jobId: string, asResume = false) => {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/fetch/jobs/${encodeURIComponent(jobId)}/status`, { method: "GET" });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok || !json) return false;
+      applyStatusSnapshot(jobId, json, asResume);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const startStatusPolling = (jobId: string) => {
+    stopStatusPolling();
+    pollRef.current = setInterval(() => {
+      void fetchJobStatus(jobId, false);
+    }, 5000);
+  };
+
+  const attachEventStream = (jobId: string, asResume = false) => {
+    const token = getAccessToken();
+    const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
+    const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(jobId)}${tq}`;
+
+    if (esRef.current) esRef.current.close();
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    if (asResume) {
+      setMessages((m) => [...m, { type: "resume", message: `Reconnecting to job ${jobId}`, jobId }]);
+    }
+
+    es.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        setMessages((m) => [...m, d]);
+
+        if (d.type === "queued") {
+          setPhaseLabel(d.message || "Queued");
+          if (typeof d.filesTotal === "number" && d.filesTotal > 0) {
+            setFilesTotal(d.filesTotal);
+            setProgressPct(0);
+          }
+        }
+
+        if (d.type === "progress") {
+          const msg = String(d.message || "").toLowerCase();
+          if (msg.includes("collecting")) setPhaseLabel("Collecting file list");
+          else if (msg.includes("selection summary")) setPhaseLabel("Filtering latest files");
+          else if (msg.includes("attempting fetch")) setPhaseLabel("Downloading CSV files");
+          else if (msg.includes("downloading file")) setPhaseLabel("Downloading current file");
+          else if (msg.includes("processing csv rows")) setPhaseLabel("Processing downloaded CSV");
+          else if (msg.includes("auto realign started")) setPhaseLabel("Auto realign in progress");
+          else if (msg.includes("auto realign finished")) setPhaseLabel("Auto realign finished");
+          else if (d.message) setPhaseLabel(String(d.message));
+          if (typeof d.totalRows === "number") setRowsInserted(d.totalRows);
+        }
+
+        if (d.type === "file-start") {
+          const completed = Number(d.filesCompleted || 0);
+          const total = Number(d.filesTotal || filesTotal || 0);
+          if (total > 0) {
+            setFilesTotal(total);
+            setFilesCompleted(completed);
+            const basePct = Math.max(0, Math.min(99, Math.round((completed / total) * 100)));
+            setProgressPct(basePct);
+            setPhaseLabel(`Processing file ${Math.min(total, completed + 1)} of ${total}`);
+          } else {
+            setPhaseLabel("Processing file");
+          }
+        }
+
+        if (d.type === "file-complete") {
+          const completed = Number(d.filesCompleted || 0);
+          const total = Number(d.filesTotal || filesTotal || 0);
+          if (total > 0) {
+            setFilesTotal(total);
+            setFilesCompleted(completed);
+            setProgressPct(Math.max(0, Math.min(100, Math.round((completed / total) * 100))));
+          }
+          if (typeof d.rows === "number") {
+            setRowsInserted((prev) => prev + d.rows);
+          }
+          setPhaseLabel("Ingestion running");
+        }
+
+        if (d.type === "complete") {
+          const total = Number(d.filesTotal || filesTotal || 0);
+          const completed = Number(d.filesCompleted || total || filesCompleted || 0);
+          setFilesTotal(total);
+          setFilesCompleted(completed);
+          if (typeof d.rowsInserted === "number") setRowsInserted(d.rowsInserted);
+          setProgressPct(100);
+          setPhaseLabel("Completed");
+          setResumeStatus("completed");
+          setLive(false);
+          es.close();
+          stopStatusPolling();
+        }
+
+        if (d.type === "error") {
+          setPhaseLabel("Failed");
+          setResumeStatus("failed");
+          setLive(false);
+          es.close();
+          stopStatusPolling();
+        }
+
+        persistProgress({
+          jobId,
+          phaseLabel: d.type === "complete" ? "Completed" : d.type === "error" ? "Failed" : undefined,
+          filesTotal: typeof d.filesTotal === "number" ? d.filesTotal : filesTotal,
+          filesCompleted: typeof d.filesCompleted === "number" ? d.filesCompleted : filesCompleted,
+          rowsInserted,
+          progressPct,
+          live: d.type !== "complete" && d.type !== "error",
+        });
+      } catch {
+        setMessages((m) => [...m, { type: "message", raw: ev.data }]);
+      }
+    };
+
+    es.onerror = () => {
+      setMessages((m) => [...m, { type: "sse-error", message: "SSE disconnected. Resuming via status polling…", jobId }]);
+      setPhaseLabel("Connection lost, resuming…");
+      setLive(true);
+      es.close();
+      startStatusPolling(jobId);
+    };
+  };
+
+  const handleResume = async () => {
+    const jobId = String(resumeJobId || "").trim();
+    if (!jobId) return;
+
+    const resumed = await fetchJobStatus(jobId, true);
+    if (!resumed) {
+      setMessages((m) => [...m, { type: "resume-error", message: `Failed to resume job ${jobId}.` }]);
+      return;
+    }
+
+    const terminal = ["completed", "complete", "failed"].includes(String(resumeStatus || "").toLowerCase());
+    if (!terminal) {
+      setLive(true);
+      attachEventStream(jobId, true);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      stopStatusPolling();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!confirmFreshOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setConfirmFreshOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [confirmFreshOpen]);
+
+  useEffect(() => {
+    (async () => {
+      if (typeof window === "undefined") return;
+      let parsed: any = null;
+      try {
+        const raw = window.localStorage.getItem(MANUAL_FETCH_PROGRESS_KEY);
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = null;
+      }
+      const jobId = String(parsed?.jobId || "").trim();
+      if (!jobId) return;
+
+      setResumeJobId(jobId);
+      setResumeStatus(String(parsed?.status || ""));
+      const resumed = await fetchJobStatus(jobId, false);
+      if (!resumed) {
+        setMessages((m) => [...m, { type: "resume-error", message: `Failed to resume job ${jobId}.` }]);
+        return;
+      }
+    })();
+  }, []);
 
   const handleStart = async () => {
     if (!startDate || !endDate) { alert("Please select start and end dates before starting."); return; }
@@ -893,93 +1245,23 @@ export default function ManualFetchClient() {
       const json = await resp.json();
       if (!resp.ok) { alert(json?.message ?? "Failed to start fetch"); return; }
 
+      clearSavedProgress(false);
+      setCurrentJobId(String(json.jobId || ""));
+      setResumeJobId(String(json.jobId || ""));
+      setResumeStatus("queued");
       setMessages(m => [...m, { type: "queued", message: "Job queued", jobId: json.jobId }]);
       setLive(true);
-
-      const token = getAccessToken();
-      const tq = token ? `&token=${encodeURIComponent(token.replace(/^Bearer\s+/, ""))}` : "";
-      const url = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(json.jobId)}${tq}`;
-      if (esRef.current) esRef.current.close();
-      const es = new EventSource(url);
-      esRef.current = es;
-
-      es.onmessage = ev => {
-        try {
-          const d = JSON.parse(ev.data);
-          setMessages(m => [...m, d]);
-
-          if (d.type === "queued") {
-            setPhaseLabel(d.message || "Queued");
-            if (typeof d.filesTotal === "number" && d.filesTotal > 0) {
-              setFilesTotal(d.filesTotal);
-              setProgressPct(0);
-            }
-          }
-
-          if (d.type === "progress") {
-            const msg = String(d.message || "").toLowerCase();
-            if (msg.includes("collecting")) setPhaseLabel("Collecting file list");
-            else if (msg.includes("selection summary")) setPhaseLabel("Filtering latest files");
-            else if (msg.includes("attempting fetch")) setPhaseLabel("Downloading CSV files");
-            else if (msg.includes("downloading file")) setPhaseLabel("Downloading current file");
-            else if (msg.includes("processing csv rows")) setPhaseLabel("Processing downloaded CSV");
-            else if (msg.includes("auto realign started")) setPhaseLabel("Auto realign in progress");
-            else if (msg.includes("auto realign finished")) setPhaseLabel("Auto realign finished");
-            else if (d.message) setPhaseLabel(String(d.message));
-            if (typeof d.totalRows === "number") setRowsInserted(d.totalRows);
-          }
-
-          if (d.type === "file-start") {
-            const completed = Number(d.filesCompleted || 0);
-            const total = Number(d.filesTotal || filesTotal || 0);
-            if (total > 0) {
-              setFilesTotal(total);
-              setFilesCompleted(completed);
-              const basePct = Math.max(0, Math.min(99, Math.round((completed / total) * 100)));
-              setProgressPct(basePct);
-              setPhaseLabel(`Processing file ${Math.min(total, completed + 1)} of ${total}`);
-            } else {
-              setPhaseLabel("Processing file");
-            }
-          }
-
-          if (d.type === "file-complete") {
-            const completed = Number(d.filesCompleted || 0);
-            const total = Number(d.filesTotal || filesTotal || 0);
-            if (total > 0) {
-              setFilesTotal(total);
-              setFilesCompleted(completed);
-              setProgressPct(Math.max(0, Math.min(100, Math.round((completed / total) * 100))));
-            }
-            if (typeof d.rows === "number") {
-              setRowsInserted(prev => prev + d.rows);
-            }
-            setPhaseLabel("Ingestion running");
-          }
-
-          if (d.type === "complete") {
-            const total = Number(d.filesTotal || filesTotal || 0);
-            const completed = Number(d.filesCompleted || total || filesCompleted || 0);
-            setFilesTotal(total);
-            setFilesCompleted(completed);
-            if (typeof d.rowsInserted === "number") setRowsInserted(d.rowsInserted);
-            setProgressPct(100);
-            setPhaseLabel("Completed");
-          }
-
-          if (d.type === "error") {
-            setPhaseLabel("Failed");
-          }
-
-          if (d.type === "complete" || d.type === "error") { es.close(); setLive(false); }
-        } catch { setMessages(m => [...m, { type: "message", raw: ev.data }]); }
-      };
-      es.onerror = () => {
-        setMessages(m => [...m, { type: "sse-error" }]);
-        setPhaseLabel("Connection error");
-        es.close();
-        setLive(false);
-      };
+      persistProgress({
+        jobId: json.jobId,
+        status: "queued",
+        phaseLabel: "Queued",
+        filesTotal: 0,
+        filesCompleted: 0,
+        rowsInserted: 0,
+        progressPct: 0,
+        live: true,
+      });
+      attachEventStream(String(json.jobId || ""), false);
     } catch (e) {
       setMessages(m => [...m, { type: "error", message: String(e) }]);
       setPhaseLabel("Failed to start");
@@ -1077,6 +1359,7 @@ export default function ManualFetchClient() {
               <span>{progressPct}%</span>
               <span>Files: {filesCompleted}/{filesTotal || "?"}</span>
               <span>Rows: {rowsInserted}</span>
+              {currentJobId && <span>Job: {currentJobId}</span>}
             </div>
           </div>
 
@@ -1084,7 +1367,48 @@ export default function ManualFetchClient() {
             <button className="mfc-btn mfc-btn-accent" onClick={handleStart} disabled={live}>
               <Ico.Play /> {live ? "Running…" : "Start Fetch + Auto Realign"}
             </button>
+            {resumeJobId && (
+              <button className="mfc-btn mfc-btn-primary" onClick={handleResume} disabled={live}>
+                <Ico.Play /> Resume Last Job
+              </button>
+            )}
+            {resumeJobId && (
+              <button className="mfc-btn mfc-btn-ghost" onClick={() => setConfirmFreshOpen(true)} disabled={live}>
+                <Ico.Square /> Start Fresh
+              </button>
+            )}
           </div>
+
+          {resumeJobId && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              Last saved job: {resumeJobId}{resumeStatus ? ` (${resumeStatus})` : ""}
+            </div>
+          )}
+
+          {confirmFreshOpen && (
+            <div className="mfc-modal-overlay" onClick={() => setConfirmFreshOpen(false)}>
+              <div className="mfc-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="mfc-modal-title">Start fresh fetch?</div>
+                <div className="mfc-modal-text">
+                  This will clear the saved progress snapshot. You can still check old jobs from job status endpoints, but this page will reset to a new run.
+                </div>
+                <div className="mfc-modal-actions">
+                  <button className="mfc-btn mfc-btn-ghost" onClick={() => setConfirmFreshOpen(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="mfc-btn mfc-btn-accent"
+                    onClick={() => {
+                      clearSavedProgress(true);
+                      setConfirmFreshOpen(false);
+                    }}
+                  >
+                    Yes, Start Fresh
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Console */}
           <div className="mfc-console">
