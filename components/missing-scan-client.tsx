@@ -2,10 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
+import { toast } from "sonner";
+import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
 const MISSING_SCAN_SOURCE_KEY = "missingScan:sourceMode";
+const MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY = "missingScan:activeQueueJob";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
 
 /* ─────────────────────────── CSS ─────────────────────────── */
@@ -105,7 +108,7 @@ const css = `
 }
 
 .msc-title {
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Kanit', sans-serif;
   font-size: 17px; font-weight: 700;
   color: var(--surface); line-height: 1.2;
   letter-spacing: 0.01em;
@@ -602,8 +605,10 @@ export default function MissingScanClient() {
   const [live, setLive] = useState(false);
   const [queueing, setQueueing] = useState(false);
   const [queueStatus, setQueueStatus] = useState("");
+  const [activeQueueJobId, setActiveQueueJobId] = useState("");
   const [scanSource, setScanSource] = useState<"report_pos_sended" | "latest">("report_pos_sended");
   const queueEsRef = useRef<EventSource | null>(null);
+  const lastQueueDisconnectAtRef = useRef<number>(0);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -612,12 +617,36 @@ export default function MissingScanClient() {
     if (saved === "report_pos_sended" || saved === "latest") {
       setScanSource(saved);
     }
+
+    try {
+      const savedResult = window.localStorage.getItem(MISSING_SCAN_RESULT_KEY);
+      if (savedResult) {
+        const parsed = JSON.parse(savedResult);
+        if (parsed && typeof parsed === "object") setScanResult(parsed);
+      }
+    } catch {
+      // ignore malformed saved result
+    }
+
+    const savedQueueJob = String(window.localStorage.getItem(MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY) || "").trim();
+    if (savedQueueJob) {
+      setActiveQueueJobId(savedQueueJob);
+      setQueueStatus(`Reconnecting to queued fetch job ${savedQueueJob}...`);
+      if (shouldEmitToastOnce(`missing-scan-restore:${savedQueueJob}`, 5000)) {
+        toast.info(`Session restored: queued job ${savedQueueJob}`, { id: `missing-scan-restore-${savedQueueJob}` });
+      }
+    }
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(MISSING_SCAN_SOURCE_KEY, scanSource);
   }, [scanSource]);
+
+  useEffect(() => {
+    if (!activeQueueJobId) return;
+    watchQueueJobAndRefresh(activeQueueJobId);
+  }, [activeQueueJobId]);
 
   useEffect(() => {
     return () => {
@@ -723,6 +752,7 @@ export default function MissingScanClient() {
       const json = await resp.json();
       if (!resp.ok) {
         setMessages(m => [...m, `Error: ${json?.message ?? 'Scan failed'}`]);
+        toast.error(json?.message ?? "Scan failed");
         setProgressValue(0);
         setLive(false);
         return;
@@ -742,12 +772,14 @@ export default function MissingScanClient() {
       }
       setProgressValue(100);
       setLive(false);
+      toast.success(`Missing scan complete (${json?.results?.length || 0} rows)`);
       if (typeof window !== "undefined") {
         window.localStorage.setItem(MISSING_SCAN_RESULT_KEY, JSON.stringify(json));
         window.dispatchEvent(new CustomEvent("missing-scan-result", { detail: json }));
       }
     } catch (e) {
       setMessages(m => [...m, `Error: ${String(e)}`]);
+      toast.error("Missing scan failed");
       setProgressValue(0);
       setLive(false);
     }
@@ -760,6 +792,11 @@ export default function MissingScanClient() {
   const watchQueueJobAndRefresh = (jobId: string) => {
     if (!jobId) return;
 
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY, jobId);
+    }
+    setActiveQueueJobId(jobId);
+
     if (queueEsRef.current) {
       queueEsRef.current.close();
       queueEsRef.current = null;
@@ -770,21 +807,33 @@ export default function MissingScanClient() {
     const streamUrl = `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(jobId)}${tq}`;
     const es = new EventSource(streamUrl);
     queueEsRef.current = es;
+    toast.info(`Watching queue job ${jobId}`);
 
     es.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data || "{}");
         if (data?.type === "complete") {
           setQueueStatus("✅ Queue fetch completed. Refreshing missing scan...");
+          toast.success("Queue fetch completed");
+          setActiveQueueJobId("");
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY);
+          }
           es.close();
           queueEsRef.current = null;
           void runScan({ showStartMessages: false }).then(() => {
             setQueueStatus("✅ Missing dates auto-refreshed.");
+            toast.success("Missing scan auto-refreshed");
           });
           return;
         }
         if (data?.type === "error") {
           setQueueStatus(`Queue job failed: ${data?.message || "Unknown error"}`);
+          toast.error(`Queue job failed: ${data?.message || "Unknown error"}`);
+          setActiveQueueJobId("");
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY);
+          }
           es.close();
           queueEsRef.current = null;
         }
@@ -795,6 +844,11 @@ export default function MissingScanClient() {
 
     es.onerror = () => {
       setQueueStatus("Queue stream disconnected. Results will refresh on next scan.");
+      const now = Date.now();
+      if (now - lastQueueDisconnectAtRef.current >= 5000) {
+        lastQueueDisconnectAtRef.current = now;
+        toast.warning("Queue stream disconnected");
+      }
       es.close();
       queueEsRef.current = null;
     };
@@ -846,16 +900,19 @@ export default function MissingScanClient() {
       const json = await resp.json();
       if (!resp.ok) {
         setQueueStatus(`Error: ${json?.message ?? 'Queue failed'}`);
+        toast.error(json?.message ?? "Queue failed");
         setQueueing(false);
         return;
       }
 
       setQueueStatus(`✅ Queued successfully! Job ID: ${json.jobId || 'N/A'}. Waiting for completion...`);
+      toast.success(`Queued missing fetch job ${json.jobId || "N/A"}`);
       if (json?.jobId) {
         watchQueueJobAndRefresh(String(json.jobId));
       }
     } catch (e) {
       setQueueStatus(`Error: ${String(e)}`);
+      toast.error("Failed to queue missing fetch job");
     } finally {
       setQueueing(false);
     }
@@ -972,15 +1029,15 @@ export default function MissingScanClient() {
                   <button
                     type="button"
                     className="msc-btn"
-                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'report_pos_sended' ? 'var(--sky-muted)' : 'transparent', color: 'var(--navy)' }}
+                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'report_pos_sended' ? 'var(--sky)' : 'transparent', color: 'var(--navy)' }}
                     onClick={() => setScanSource('report_pos_sended')}
                   >
-                    Scraper
+                    Server
                   </button>
                   <button
                     type="button"
                     className="msc-btn"
-                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'latest' ? 'var(--gold-muted)' : 'transparent', color: 'var(--navy)' }}
+                    style={{ padding: '4px 8px', fontSize: '10px', background: scanSource === 'latest' ? 'var(--gold)' : 'transparent', color: 'var(--navy)' }}
                     onClick={() => setScanSource('latest')}
                   >
                     Local

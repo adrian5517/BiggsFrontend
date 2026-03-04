@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
+import { toast } from "sonner";
+import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
@@ -46,7 +48,7 @@ const css = `
   --radius-sm:  8px;
   --radius:     12px;
   --radius-lg:  16px;
-  --font-ui:    'Poppins', sans-serif;
+  --font-ui:    'Kanit', sans-serif;
   --font-mono:  'DM Mono', monospace;
   --t:          220ms cubic-bezier(0.4,0,0.2,1);
 
@@ -111,7 +113,7 @@ const css = `
 }
 
 .mfc-title {
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Kanit', sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: #fff;
@@ -901,6 +903,8 @@ export default function ManualFetchClient() {
   const esRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const consoleRef = useRef<HTMLDivElement | null>(null);
+  const lastSseDisconnectAtRef = useRef(0);
+  const restoreToastShownRef = useRef(false);
 
   useEffect(() => {
     if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
@@ -960,10 +964,30 @@ export default function ManualFetchClient() {
   const mapStatusToPhase = (status: string) => {
     const s = String(status || "").toLowerCase();
     if (s === "completed" || s === "complete") return "Completed";
-    if (s === "failed") return "Failed";
+    if (s === "failed" || s === "error" || s === "stopped" || s === "cancelled") return "Failed";
     if (s === "running") return "Ingestion running";
     if (s === "queued") return "Queued";
     return "Running";
+  };
+
+  const isTerminalStatus = (status: string) => {
+    const s = String(status || "").toLowerCase();
+    return s === "completed" || s === "complete" || s === "failed" || s === "error" || s === "stopped" || s === "cancelled";
+  };
+
+  const isLikelyStaleQueuedJob = (statusJson: any) => {
+    const status = String(statusJson?.status || "").toLowerCase();
+    const filesTotalValue = Number(statusJson?.filesTotal || 0);
+    const startedAt = statusJson?.startedAt ? new Date(statusJson.startedAt) : null;
+    const updatedAt = statusJson?.updatedAt ? new Date(statusJson.updatedAt) : null;
+
+    if (status !== "queued") return false;
+    if (filesTotalValue > 0) return false;
+    if (startedAt && !Number.isNaN(startedAt.getTime())) return false;
+    if (!updatedAt || Number.isNaN(updatedAt.getTime())) return false;
+
+    const ageMs = Date.now() - updatedAt.getTime();
+    return ageMs > 90_000;
   };
 
   const applyStatusSnapshot = (jobId: string, statusJson: any, asResume = false) => {
@@ -1000,6 +1024,12 @@ export default function ManualFetchClient() {
           progress: progressValue,
         },
       ]);
+      if (!restoreToastShownRef.current) {
+        restoreToastShownRef.current = true;
+      }
+      if (shouldEmitToastOnce(`manual-fetch-restore:${jobId}`, 5000)) {
+        toast.info(`Session restored: manual fetch job ${jobId}`, { id: `manual-fetch-restore-${jobId}` });
+      }
     }
 
     persistProgress({
@@ -1022,16 +1052,17 @@ export default function ManualFetchClient() {
     try {
       const resp = await fetchWithAuth(`${API_BASE}/api/fetch/jobs/${encodeURIComponent(jobId)}/status`, { method: "GET" });
       const json = await resp.json().catch(() => null);
-      if (!resp.ok || !json) return false;
+      if (!resp.ok || !json) return null;
       applyStatusSnapshot(jobId, json, asResume);
-      return true;
+      return json;
     } catch {
-      return false;
+      return null;
     }
   };
 
   const startStatusPolling = (jobId: string) => {
     stopStatusPolling();
+    void fetchJobStatus(jobId, false);
     pollRef.current = setInterval(() => {
       void fetchJobStatus(jobId, false);
     }, 5000);
@@ -1054,6 +1085,7 @@ export default function ManualFetchClient() {
       try {
         const d = JSON.parse(ev.data);
         setMessages((m) => [...m, d]);
+        let nonTerminalError = false;
 
         if (d.type === "queued") {
           setPhaseLabel(d.message || "Queued");
@@ -1114,16 +1146,28 @@ export default function ManualFetchClient() {
           setPhaseLabel("Completed");
           setResumeStatus("completed");
           setLive(false);
+          toast.success(`Manual fetch completed (job ${jobId})`);
           es.close();
           stopStatusPolling();
         }
 
         if (d.type === "error") {
-          setPhaseLabel("Failed");
-          setResumeStatus("failed");
-          setLive(false);
-          es.close();
-          stopStatusPolling();
+          const statusHint = String(d?.status || d?.jobStatus || "").toLowerCase();
+          const isTerminalError = ["failed", "error", "stopped", "cancelled"].includes(statusHint);
+
+          if (isTerminalError) {
+            setPhaseLabel("Failed");
+            setResumeStatus(statusHint || "failed");
+            setLive(false);
+            toast.error(`Manual fetch failed (job ${jobId})`);
+            es.close();
+            stopStatusPolling();
+          } else {
+            nonTerminalError = true;
+            setMessages((m) => [...m, { type: "warning", message: "File-level error detected. Job continues." }]);
+            setPhaseLabel((prev) => (prev === "Completed" ? prev : "Ingestion running"));
+            setLive(true);
+          }
         }
 
         persistProgress({
@@ -1133,7 +1177,7 @@ export default function ManualFetchClient() {
           filesCompleted: typeof d.filesCompleted === "number" ? d.filesCompleted : filesCompleted,
           rowsInserted,
           progressPct,
-          live: d.type !== "complete" && d.type !== "error",
+          live: d.type !== "complete" && (d.type !== "error" || nonTerminalError),
         });
       } catch {
         setMessages((m) => [...m, { type: "message", raw: ev.data }]);
@@ -1144,7 +1188,13 @@ export default function ManualFetchClient() {
       setMessages((m) => [...m, { type: "sse-error", message: "SSE disconnected. Resuming via status polling…", jobId }]);
       setPhaseLabel("Connection lost, resuming…");
       setLive(true);
+      const now = Date.now();
+      if (now - lastSseDisconnectAtRef.current >= 5000) {
+        lastSseDisconnectAtRef.current = now;
+        toast.warning("Manual fetch stream disconnected. Falling back to status polling.");
+      }
       es.close();
+      esRef.current = null;
       startStatusPolling(jobId);
     };
   };
@@ -1153,16 +1203,25 @@ export default function ManualFetchClient() {
     const jobId = String(resumeJobId || "").trim();
     if (!jobId) return;
 
-    const resumed = await fetchJobStatus(jobId, true);
-    if (!resumed) {
+    const statusJson = await fetchJobStatus(jobId, true);
+    if (!statusJson) {
       setMessages((m) => [...m, { type: "resume-error", message: `Failed to resume job ${jobId}.` }]);
+      toast.error(`Failed to resume job ${jobId}`);
       return;
     }
 
-    const terminal = ["completed", "complete", "failed"].includes(String(resumeStatus || "").toLowerCase());
+    if (isLikelyStaleQueuedJob(statusJson)) {
+      setMessages((m) => [...m, { type: "resume-stale", message: `Saved job ${jobId} is stale (queued too long with no work). Please start a fresh fetch.` }]);
+      toast.warning(`Saved job ${jobId} is stale. Start Fresh and run again.`);
+      clearSavedProgress(true);
+      return;
+    }
+
+    const terminal = isTerminalStatus(String(statusJson?.status || resumeStatus || ""));
     if (!terminal) {
       setLive(true);
       attachEventStream(jobId, true);
+      startStatusPolling(jobId);
     }
   };
 
@@ -1205,11 +1264,34 @@ export default function ManualFetchClient() {
       if (!jobId) return;
 
       setResumeJobId(jobId);
-      setResumeStatus(String(parsed?.status || ""));
-      const resumed = await fetchJobStatus(jobId, false);
-      if (!resumed) {
+      const statusJson = await fetchJobStatus(jobId, false);
+      if (!statusJson) {
         setMessages((m) => [...m, { type: "resume-error", message: `Failed to resume job ${jobId}.` }]);
+        toast.error(`Failed to restore job ${jobId}`);
+        clearSavedProgress(true);
         return;
+      }
+
+      if (isLikelyStaleQueuedJob(statusJson)) {
+        setMessages((m) => [...m, { type: "resume-stale", message: `Saved job ${jobId} is stale (queued too long with no work).` }]);
+        toast.warning(`Saved job ${jobId} is stale. Cleared saved session.`);
+        clearSavedProgress(true);
+        return;
+      }
+
+      setResumeStatus(String(statusJson?.status || parsed?.status || ""));
+      if (!restoreToastShownRef.current) {
+        restoreToastShownRef.current = true;
+        if (shouldEmitToastOnce(`manual-fetch-restore:${jobId}`, 5000)) {
+          toast.info(`Restored manual fetch session for job ${jobId}`, { id: `manual-fetch-restore-${jobId}` });
+        }
+      }
+
+      const terminal = isTerminalStatus(String(statusJson?.status || ""));
+      if (!terminal) {
+        setLive(true);
+        attachEventStream(jobId, true);
+        startStatusPolling(jobId);
       }
     })();
   }, []);
@@ -1243,13 +1325,18 @@ export default function ManualFetchClient() {
         body: JSON.stringify(body),
       });
       const json = await resp.json();
-      if (!resp.ok) { alert(json?.message ?? "Failed to start fetch"); return; }
+      if (!resp.ok) {
+        alert(json?.message ?? "Failed to start fetch");
+        toast.error(json?.message ?? "Failed to start fetch");
+        return;
+      }
 
       clearSavedProgress(false);
       setCurrentJobId(String(json.jobId || ""));
       setResumeJobId(String(json.jobId || ""));
       setResumeStatus("queued");
       setMessages(m => [...m, { type: "queued", message: "Job queued", jobId: json.jobId }]);
+      toast.success(`Manual fetch queued (job ${json.jobId || "N/A"})`);
       setLive(true);
       persistProgress({
         jobId: json.jobId,
@@ -1265,6 +1352,7 @@ export default function ManualFetchClient() {
     } catch (e) {
       setMessages(m => [...m, { type: "error", message: String(e) }]);
       setPhaseLabel("Failed to start");
+      toast.error("Failed to start manual fetch");
     }
   };
 

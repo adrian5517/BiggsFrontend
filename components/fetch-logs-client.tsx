@@ -739,6 +739,21 @@ export default function FetchLogsClient() {
     URL.revokeObjectURL(url)
   }
 
+  function formatWorkDate(value: any): string {
+    if (!value) return ''
+    if (typeof value === 'string') {
+      const raw = value.trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+    }
+
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return ''
+    const yyyy = parsed.getFullYear()
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0')
+    const dd = String(parsed.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
   const totalPages = Math.ceil(total / limit)
   const filteredItems = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase()
@@ -748,7 +763,7 @@ export default function FetchLogsClient() {
       const file = formatSourceFilePath(it.sourceFile ?? it.source_file ?? it.filename ?? it.url ?? '')
       const branch = String(it.branch ?? '')
       const workDateRaw = it.work_date || it.workDate
-      const workDate = workDateRaw ? new Date(workDateRaw).toISOString().slice(0, 10) : ''
+      const workDate = formatWorkDate(workDateRaw)
       const haystack = `${id} ${file} ${branch} ${workDate}`.toLowerCase()
       return haystack.includes(needle)
     })
@@ -913,7 +928,7 @@ export default function FetchLogsClient() {
                     </td>
                     <td>
                       <span className="fl-mono" style={{ color: 'var(--ink)' }}>
-                        {(it.work_date || it.workDate) ? new Date(it.work_date || it.workDate).toISOString().slice(0, 10) : '—'}
+                        {formatWorkDate(it.work_date || it.workDate) || '—'}
                       </span>
                     </td>
                     <td>

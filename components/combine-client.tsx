@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
+import { toast } from "sonner";
+import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const COMBINE_ACTIVE_JOB_KEY = "combine_active_job_v1";
@@ -46,7 +48,7 @@ const css = `
   --radius-sm:  8px;
   --radius:     12px;
   --radius-lg:  16px;
-  --font-ui:    'Poppins', sans-serif;
+  --font-ui:    'Kanit', sans-serif;
   --font-mono:  'DM Mono', monospace;
   --t:          220ms cubic-bezier(0.4,0,0.2,1);
 
@@ -109,7 +111,7 @@ const css = `
 }
 
 .cmb-title {
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Kanit', sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: #fff;
@@ -671,6 +673,8 @@ export default function CombineClient() {
   const statusPollRef = useRef<any>(null);
   const suppressSseErrorRef = useRef(false);
   const terminalHandledRef = useRef(false);
+  const autoResumeAttemptedRef = useRef(false);
+  const streamDisconnectedRef = useRef(false);
 
   // Extract progress info from messages
   useEffect(() => {
@@ -791,6 +795,17 @@ export default function CombineClient() {
     };
   }, []);
 
+  useEffect(() => {
+    const jobId = String((resumeJobIdInput || resumableJobId || "")).trim();
+    if (!jobId || live || autoResumeAttemptedRef.current) return;
+    autoResumeAttemptedRef.current = true;
+    setMessages((m) => pushCappedMessage(m, { type: "message", message: `Restoring active job session: ${jobId}` }));
+    if (shouldEmitToastOnce(`combine-restore:${jobId}`, 5000)) {
+      toast.info(`Restoring combine session for job ${jobId}`, { id: `combine-restore-${jobId}` });
+    }
+    void handleResume();
+  }, [resumeJobIdInput, resumableJobId, live]);
+
   const saveActiveJob = (jobId: string, force = false) => {
     const payload = {
       jobId,
@@ -870,6 +885,7 @@ export default function CombineClient() {
             closeEventSource(true);
             setLive(false);
             setMessages((m) => [...m, { type: "complete", message: `Job ${jobId} already completed.` }]);
+            toast.success(`Combine completed (job ${jobId})`);
             clearActiveJob();
           });
           return;
@@ -881,6 +897,7 @@ export default function CombineClient() {
             closeEventSource(true);
             setLive(false);
             setMessages((m) => [...m, { type: "error", message: `Job ${jobId} is ${status}.` }]);
+            toast.error(`Combine job ${jobId} is ${status}`);
             clearActiveJob();
           });
         }
@@ -903,6 +920,10 @@ export default function CombineClient() {
     esRef.current = es;
 
     es.onopen = () => {
+      if (streamDisconnectedRef.current) {
+        streamDisconnectedRef.current = false;
+        toast.success("Combine stream reconnected", { id: `combine-sse-${jobId}` });
+      }
       setMessages((m) => pushCappedMessage(m, { type: "message", message: `Connected to stream for job: ${jobId}` }));
     };
 
@@ -916,6 +937,7 @@ export default function CombineClient() {
             stopStatusPolling();
             closeEventSource(true);
             setLive(false);
+            toast.success(`Combine completed (job ${jobId})`);
             clearActiveJob();
           });
         }
@@ -925,6 +947,7 @@ export default function CombineClient() {
             stopStatusPolling();
             closeEventSource(true);
             setLive(false);
+            toast.error(`Combine failed (job ${jobId})`);
             setResumableJobId(jobId);
           });
         }
@@ -938,9 +961,11 @@ export default function CombineClient() {
         suppressSseErrorRef.current = false;
         return;
       }
+      streamDisconnectedRef.current = true;
       handleTerminalOnce(() => {
         stopStatusPolling();
         setMessages((m) => [...m, { type: "error", message: "SSE connection error (you can resume by Job ID)" }]);
+        toast.warning("Combine stream disconnected. Resume by Job ID.", { id: `combine-sse-${jobId}` });
         closeEventSource(true);
         setLive(false);
         setResumableJobId(jobId);
@@ -997,10 +1022,12 @@ export default function CombineClient() {
 
       saveActiveJob(jobId, force);
       setMessages((m) => [...m, { type: "queued", message: `Job queued: ${jobId}${force ? " (recombine)" : ""}` }]);
+      toast.success(`Combine queued (job ${jobId})`);
       connectToJobStream(jobId);
       startStatusPolling(jobId);
     } catch (e) {
       setMessages((m) => [...m, { type: "error", message: String(e) }]);
+      toast.error("Failed to start combine");
       setLive(false);
     }
   };
@@ -1009,6 +1036,7 @@ export default function CombineClient() {
     const jobId = String((resumeJobIdInput || resumableJobId || "")).trim();
     if (!jobId) {
       setMessages((m) => [...m, { type: "error", message: "Enter a Job ID to resume." }]);
+      toast.error("Enter a Job ID to resume");
       return;
     }
 
@@ -1021,6 +1049,7 @@ export default function CombineClient() {
     setPolledFilesTotal(0);
     saveActiveJob(jobId);
     setMessages((m) => [...m, { type: "queued", message: `Resuming stream for job: ${jobId}` }]);
+    toast.info(`Resuming combine job ${jobId}`);
     connectToJobStream(jobId);
     startStatusPolling(jobId);
   };
@@ -1039,6 +1068,7 @@ export default function CombineClient() {
     closeEventSource(true);
     setMessages(m => [...m, { type: "stopped", message: "Stopped by user" }]);
     setLive(false);
+    toast.info("Combine stopped by user");
   };
 
   const hasResumeJob = !!String(resumeJobIdInput || resumableJobId || "").trim();

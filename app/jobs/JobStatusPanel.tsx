@@ -1,7 +1,9 @@
 "use client";
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSSE } from '../../hooks/use-sse';
 import { fetchWithAuth } from '@/utils/auth';
+import { toast } from 'sonner';
+import { shouldEmitToastOnce } from '@/utils/toast-dedupe';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
 
@@ -54,6 +56,9 @@ export default function JobStatusPanel({ jobId }: { jobId: string }) {
   const [connected, setConnected] = useState<boolean>(false);
   const [meta, setMeta] = useState<JobMeta>({});
   const [timeZone, setTimeZone] = useState<string>('Asia/Manila');
+  const lastDisconnectAtRef = useRef<number>(0);
+  const disconnectedRef = useRef<boolean>(false);
+  const restoredToastShownRef = useRef<boolean>(false);
 
   const storageKey = `jobs:status:${jobId}`;
 
@@ -105,21 +110,36 @@ export default function JobStatusPanel({ jobId }: { jobId: string }) {
     }
   }, [pushEvent]);
 
+  const onSseError = useCallback(() => {
+    setConnected(false);
+    disconnectedRef.current = true;
+    const now = Date.now();
+    if (now - lastDisconnectAtRef.current < 5000) return;
+    lastDisconnectAtRef.current = now;
+    pushEvent('error', 'Live stream disconnected');
+    toast.warning('Job stream disconnected. Reconnecting…', { id: `job-sse-${jobId}` });
+  }, [jobId, pushEvent]);
+
+  const onSseOpen = useCallback(() => {
+    setConnected(true);
+    pushEvent('system', 'Live stream connected');
+    if (disconnectedRef.current) {
+      disconnectedRef.current = false;
+      toast.success('Job stream reconnected', { id: `job-sse-${jobId}` });
+    }
+  }, [jobId, pushEvent]);
+
+  const sseOptions = useMemo(() => ({
+    reconnect: true,
+    maxReconnectDelayMs: 15000,
+    onOpen: onSseOpen,
+  }), [onSseOpen]);
+
   useSSE(
     jobId ? `${API_BASE}/api/fetch/status/stream?jobId=${encodeURIComponent(jobId)}` : null,
     onMessage,
-    () => {
-      setConnected(false);
-      pushEvent('error', 'Live stream disconnected');
-    },
-    {
-      reconnect: true,
-      maxReconnectDelayMs: 15000,
-      onOpen: () => {
-        setConnected(true);
-        pushEvent('system', 'Live stream connected');
-      },
-    }
+    onSseError,
+    sseOptions
   );
 
   useEffect(() => {
@@ -133,6 +153,12 @@ export default function JobStatusPanel({ jobId }: { jobId: string }) {
       if (saved.meta && typeof saved.meta === 'object') setMeta(saved.meta);
       if (Array.isArray(saved.events)) {
         setEvents(saved.events.slice(0, 300));
+      }
+      if (!restoredToastShownRef.current) {
+        restoredToastShownRef.current = true;
+        if (shouldEmitToastOnce(`job-panel-restore:${jobId}`, 5000)) {
+          toast.info(`Session restored for job ${jobId}`, { id: `job-panel-restore-${jobId}` });
+        }
       }
     } catch (_) {
       // ignore malformed cache

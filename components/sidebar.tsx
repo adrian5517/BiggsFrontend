@@ -108,7 +108,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
                   <img 
                     src="/images/logo.png" 
                     alt="BIGGS" 
-                    className="h-20 w-auto drop-shadow-sm" 
+                    className="h-20 w-auto drop-shadow-sm font-kanit" 
                     onError={() => setLogoFailed(true)} 
                   />
                 ) : (
@@ -117,7 +117,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
                   </div>
                 )}
                 <div>
-                  <div className="text-xl font-bold text-slate-900">BIGGS</div>
+                  <div className="text-xl font-bold text-slate-900 font-kanit">BIGGS</div>
                   <div className="text-sm text-slate-500 font-medium">Operations</div>
                 </div>
               </div>

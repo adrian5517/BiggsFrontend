@@ -1,7 +1,7 @@
 import JobStatusPanel from '../JobStatusPanel';
 
-export default function JobPage({ params }: { params: { jobId: string } }) {
-  const { jobId } = params;
+export default async function JobPage({ params }: { params: Promise<{ jobId: string }> }) {
+  const { jobId } = await params;
   return (
     <main className="p-4 md:p-6 space-y-4">
       <div>

@@ -2,12 +2,13 @@ import React from 'react'
 import type { Metadata, Viewport } from 'next'
 import Link from 'next/link'
 // ThemeProvider removed to avoid server/client theme class mismatches
-import { Poppins } from 'next/font/google'
+import { Kanit } from 'next/font/google'
 
 import './globals.css'
 import ClientShell from '@/components/client-shell'
+import { Toaster } from '@/components/ui/sonner'
 
-const poppins = Poppins({
+const kanit = Kanit({
   subsets: ['latin'],
   weight: ['300', '400', '500', '600', '700'],
   display: 'swap',
@@ -36,10 +37,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/images/logo.png" />
         <link rel="apple-touch-icon" href="/images/logo.png" />
       </head>
-      <body className={`${poppins.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
+      <body className={`${kanit.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
           <ClientShell>
             {children}
           </ClientShell>
+          <Toaster richColors closeButton position="top-right" />
       </body>
     </html>
   )

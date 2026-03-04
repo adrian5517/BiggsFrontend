@@ -44,8 +44,8 @@ const css = `
   --shadow-sm:  0 2px 6px rgba(15,31,61,0.06), 0 1px 2px rgba(15,31,61,0.04);
   --shadow-md:  0 4px 16px rgba(15,31,61,0.08), 0 1px 4px rgba(15,31,61,0.05);
 
-  --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-ui:      'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Kanit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui:      'Kanit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:    'DM Mono', monospace;
   --t:            220ms cubic-bezier(0.4,0,0.2,1);
   --radius:       12px;
@@ -131,7 +131,7 @@ const css = `
 }
 
 .dash-title {
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Kanit', sans-serif;
   font-size: 24px; font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;

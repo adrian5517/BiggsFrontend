@@ -55,6 +55,51 @@ export function clearAccessToken() {
   } catch (e) {}
 }
 
+function readCookie(name: string): string | null {
+  try {
+    if (typeof document === 'undefined' || !document.cookie) return null
+    const encoded = `${encodeURIComponent(name)}=`
+    const parts = document.cookie.split(';').map((part) => part.trim())
+    for (const part of parts) {
+      if (part.startsWith(encoded)) {
+        return decodeURIComponent(part.slice(encoded.length))
+      }
+    }
+    return null
+  } catch (e) {
+    return null
+  }
+}
+
+function setCsrfToken(token: string | null) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    if (token && String(token).trim()) {
+      window.localStorage.setItem('csrfToken', String(token).trim())
+    } else {
+      window.localStorage.removeItem('csrfToken')
+    }
+  } catch (e) {
+    // ignore persistence failures
+  }
+}
+
+function getCsrfToken(): string | null {
+  const fromCookie = readCookie('csrfToken')
+  if (fromCookie) return fromCookie
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null
+    return window.localStorage.getItem('csrfToken')
+  } catch (e) {
+    return null
+  }
+}
+
+function shouldAttachCsrfHeader(method?: string) {
+  const normalized = String(method || 'GET').toUpperCase()
+  return normalized === 'POST' || normalized === 'PUT' || normalized === 'PATCH' || normalized === 'DELETE'
+}
+
 export function getUser() {
   try { const s = localStorage.getItem('user'); return s ? JSON.parse(s) : null } catch (e) { return null }
 }
@@ -92,14 +137,20 @@ async function refreshAccessToken(): Promise<string | null> {
       let res: Response
       if (useCookie) {
         // Rely on httpOnly cookie; send POST with credentials to include cookie
-        res = await fetch(`${BASE_API}/api/auth/refresh-token`, { method: 'POST', credentials: 'include' })
+        const headers: Record<string, string> = {}
+        const csrfToken = getCsrfToken()
+        if (csrfToken) headers['x-csrf-token'] = csrfToken
+        res = await fetch(`${BASE_API}/api/auth/refresh-token`, { method: 'POST', credentials: 'include', headers })
       } else {
         // Read refresh token from localStorage (client stores it on login)
         const refreshToken = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem('refreshToken') : null;
         if (!refreshToken) return null
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrfToken = getCsrfToken()
+        if (csrfToken) headers['x-csrf-token'] = csrfToken
         res = await fetch(`${BASE_API}/api/auth/refresh-token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include',
           body: JSON.stringify({ refreshToken })
         })
@@ -113,6 +164,7 @@ async function refreshAccessToken(): Promise<string | null> {
         if (!useCookiePersist && data.refreshToken) {
           try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.setItem('refreshToken', data.refreshToken) } catch(e){}
         }
+        if (data.csrfToken) setCsrfToken(data.csrfToken)
         return data.token
       }
       return null
@@ -152,6 +204,10 @@ export async function fetchWithAuth(input: RequestInfo, init?: RequestInit, trie
   }
   const headers = new Headers(init?.headers || {})
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (shouldAttachCsrfHeader(init?.method)) {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) headers.set('x-csrf-token', csrfToken)
+  }
 
   // Dev-only fallback: append token as a query param when enabled to help
   // with environments where Authorization headers or cookies are blocked.
@@ -299,6 +355,7 @@ export async function login(identifier: string, password: string) {
   if (res.ok && data && data.token) {
     setAccessToken(data.token)
     try { if (typeof window !== 'undefined' && window.localStorage && data.refreshToken) window.localStorage.setItem('refreshToken', data.refreshToken) } catch(e){}
+    if (data.csrfToken) setCsrfToken(data.csrfToken)
   }
   return { ok: res.ok, status: res.status, data }
 }
@@ -344,6 +401,7 @@ export async function logout() {
     // ignore network errors
   }
   clearAccessToken()
+  setCsrfToken(null)
   try { if (typeof window !== 'undefined' && window.localStorage) window.localStorage.removeItem('refreshToken') } catch(e){}
 }
 
