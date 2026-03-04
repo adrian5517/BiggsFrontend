@@ -1,18 +1,28 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Sidebar from './sidebar'
 import ProfileMenu from './profile-menu'
 import { getAccessToken } from '@/utils/auth'
+import { Toaster } from '@/components/ui/sonner'
 
 export default function ClientShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname() || '/'
   const [authed, setAuthed] = useState<boolean>(false)
+  const [authChecked, setAuthChecked] = useState<boolean>(false)
   const [showSidebar, setShowSidebar] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+
+  const isPublicRoute = pathname === '/login'
 
   useEffect(() => {
-    const check = () => setAuthed(!!getAccessToken())
+    const check = () => {
+      setAuthed(!!getAccessToken())
+      setAuthChecked(true)
+    }
     check()
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'accessToken' || e.key === 'user') check()
@@ -30,6 +40,52 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       window.removeEventListener('auth:logout', onAuthLogout as EventListener)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(max-width: 767px)')
+    const sync = () => setIsMobileViewport(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const saved = window.localStorage.getItem('sidebar:collapsed')
+      if (saved === '1') setSidebarCollapsed(true)
+      if (saved === '0') setSidebarCollapsed(false)
+    } catch {
+      // ignore storage read errors
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem('sidebar:collapsed', sidebarCollapsed ? '1' : '0')
+    } catch {
+      // ignore storage write errors
+    }
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    if (!isMobileViewport) setShowSidebar(false)
+  }, [isMobileViewport])
+
+  useEffect(() => {
+    if (!authChecked) return
+
+    if (!authed && !isPublicRoute) {
+      router.replace('/login')
+      return
+    }
+
+    if (authed && isPublicRoute) {
+      router.replace('/dashboard')
+    }
+  }, [authChecked, authed, isPublicRoute, router])
 
   // listen for external requests to set sidebar collapsed state (e.g., preview modal)
   useEffect(() => {
@@ -95,19 +151,36 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     }
   }, [])
 
-    if (!authed) {
-    // public view: just render children centered
-    return <div className="min-h-screen bg-slate-50">{children}</div>
+  if (!authChecked) {
+    return null
   }
+
+  if (!authed) {
+    if (!isPublicRoute) return null
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {children}
+        <Toaster position="top-center" offset={{ top: 12, left: '50%' }} />
+      </div>
+    )
+  }
+
+  const toasterLeftOffset = isMobileViewport
+    ? 'calc(50vw - 175px)'
+    : sidebarCollapsed
+      ? 'calc((100vw + 80px) / 2 - 175px)'
+      : 'calc((100vw + 320px) / 2 - 175px)'
 
   return (
     <div className="min-h-screen flex relative bg-slate-50">
+      <Toaster position="top-left" offset={{ top: 12, left: toasterLeftOffset }} />
       {showSidebar && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setShowSidebar(false)} />
       )}
 
       <Sidebar
-        mobileOpen={showSidebar ? showSidebar : undefined}
+        mobile={isMobileViewport}
+        mobileOpen={showSidebar}
         onClose={() => setShowSidebar(false)}
         collapsed={sidebarCollapsed}
         onCollapseChange={setSidebarCollapsed}
@@ -124,24 +197,36 @@ export default function ClientShell({ children }: { children: React.ReactNode })
         <div className="bg-gradient-to-r from-yellow-600 via-yellow-400 to-yellow-300 w-20 "></div> 
         <div className="bg-gradient-to-r from-sky-600 via-sky-400 to-sky-300 w-20"></div>
       </div>
-      {/* <button
-        aria-label="Open menu"
-        onClick={() => setShowSidebar(s => !s)}
-        className="p-2 rounded hover:bg-white/5 md:hidden"
+      <button
+        aria-label={isMobileViewport ? (showSidebar ? 'Close menu' : 'Open menu') : (sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+        onClick={() => {
+          if (isMobileViewport) {
+            setShowSidebar((s) => !s)
+            return
+          }
+          setSidebarCollapsed((s) => !s)
+        }}
+        className="relative z-10 p-2.5 rounded-lg border border-white/30 bg-white/20 hover:bg-white/30 text-slate-900 transition-colors"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button> */}
+        {isMobileViewport ? (
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </button>
     </div>
 
     {/* CENTER TITLE */}
-    <div className="absolute left-1/2 -translate-x-1/2">
+    <div className="flex-1 flex justify-center px-2">
       <HeaderTitle />
     </div>
 
     {/* RIGHT SIDE */}
-    <div className="ml-auto flex items-center gap-3">
+    <div className="flex items-center gap-3">
       <ProfileMenu />
     </div>
 
@@ -177,5 +262,12 @@ function HeaderTitle() {
     return seg.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   }, [pathname])
 
-  return <div className="hidden md:flex items-center text-sm text-primary-foreground font-bold">{mapTitle}</div>
+  return (
+    <div className="flex flex-col items-center justify-center min-w-0">
+      
+      <div className="text-[11px] md:text-xs lg:text-sm font-semibold text-primary-foreground/95 whitespace-nowrap truncate max-w-[44vw] md:max-w-[38vw]">
+        {mapTitle}
+      </div>
+    </div>
+  )
 }

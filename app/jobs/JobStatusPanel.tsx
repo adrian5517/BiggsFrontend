@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSSE } from '../../hooks/use-sse';
 import { fetchWithAuth } from '@/utils/auth';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/sonner';
 import { shouldEmitToastOnce } from '@/utils/toast-dedupe';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';

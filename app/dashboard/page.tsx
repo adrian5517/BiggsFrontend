@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import auth from "@/utils/auth";
 import ToastProvider, { useToast } from "@/components/ToastProvider";
@@ -475,11 +475,25 @@ function DashboardContent() {
 /* ─────────────────────────── Page ─────────────────────────── */
 export default function DashboardPage() {
   const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
     const token = auth.getAccessToken();
-    if (!token) router.push("/login");
+    if (!token) {
+      setIsAuthorized(false);
+      setAuthChecked(true);
+      router.replace("/login");
+      return;
+    }
+
+    setIsAuthorized(true);
+    setAuthChecked(true);
   }, [router]);
+
+  if (!authChecked || !isAuthorized) {
+    return null;
+  }
 
   return (
     <LoginLayout>

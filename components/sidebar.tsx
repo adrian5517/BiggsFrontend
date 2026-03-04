@@ -55,13 +55,13 @@ const NavItem = ({ href, icon, children, collapsed }: NavItemProps) => {
   )
 }
 
-export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp, onCollapseChange }: { mobileOpen?: boolean; onClose?: () => void; collapsed?: boolean; onCollapseChange?: (c: boolean) => void }) {
-  const mobile = typeof mobileOpen !== 'undefined'
+export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collapsedProp, onCollapseChange }: { mobile?: boolean; mobileOpen?: boolean; onClose?: () => void; collapsed?: boolean; onCollapseChange?: (c: boolean) => void }) {
+  const isMobile = !!mobile
   const isControlled = typeof collapsedProp !== 'undefined'
   const [internalCollapsed, setInternalCollapsed] = useState<boolean>(collapsedProp ?? false)
-  // keep internal state in sync when used uncontrolled and prop appears
+  // keep internal state in sync when component is controlled
   useEffect(() => {
-    if (!isControlled && typeof collapsedProp !== 'undefined') setInternalCollapsed(collapsedProp)
+    if (isControlled) setInternalCollapsed(!!collapsedProp)
   }, [collapsedProp, isControlled])
   const collapsed = isControlled ? !!collapsedProp : internalCollapsed
   const [logoFailed, setLogoFailed] = useState(false)
@@ -70,7 +70,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
   return (
     <>
       {/* Enhanced mobile overlay with blur */}
-      {mobile && (
+      {isMobile && (
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
@@ -88,19 +88,19 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
 
       <motion.aside
         initial={false}
-        animate={mobile ? { x: mobileOpen ? 0 : -baseMobileWidth } : { width: collapsed ? 80 : 320 }}
+        animate={isMobile ? { x: mobileOpen ? 0 : -baseMobileWidth } : { x: 0, width: collapsed ? 80 : 320 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         className={`fixed inset-y-0 left-0 z-40 bg-gradient-to-br from-white via-slate-50/50 to-slate-100/30 border-r border-slate-200/80 shadow-2xl shadow-slate-200/50 overflow-hidden backdrop-blur-xl ${
-          mobile ? 'w-80' : collapsed ? 'w-20' : 'w-80'
+          isMobile ? 'w-80' : collapsed ? 'w-20' : 'w-80'
         }`}
         style={{ boxSizing: 'border-box' }}
-        aria-hidden={mobile ? !mobileOpen : undefined}
+        aria-hidden={isMobile ? !mobileOpen : undefined}
       >
         {/* Premium glass effect overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-white-300 via-slate-10 to-white-10/2 pointer-events-none" />
         
-        <div className="relative z-10 p-6 pb-20">
-          {mobile ? (
+        <div className={`relative z-10 pb-20 ${isMobile ? 'p-6' : collapsed ? 'p-3' : 'p-6'}`}>
+          {isMobile ? (
             // Mobile header
             <div className="flex items-center justify-between mb-8 md:hidden">
               <div className="flex items-center gap-4">
@@ -135,10 +135,10 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
             </div>
           ) : (
             // Desktop header
-            <div className="mb-8 flex items-center gap-4">
+            <div className={`mb-8 flex items-center ${collapsed ? 'justify-center' : 'gap-4'}`}>
               <motion.div
                 whileHover={{ scale: 1.02 }}
-                className="flex items-center gap-4 cursor-pointer"
+                className={`flex cursor-pointer ${collapsed ? 'w-full justify-center' : 'items-center gap-4'}`}
                 onClick={() => {
                   if (isControlled) {
                     if (onCollapseChange) onCollapseChange(!collapsed)
@@ -151,7 +151,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
                   <motion.img 
                     src="/images/logo.png" 
                     alt="BIGGS" 
-                    className={`drop-shadow-sm transition-all duration-300 ${collapsed ? 'h-10 w-10 object-contain' : 'h-12 w-auto'}`}
+                    className={`drop-shadow-sm transition-all duration-300 ${collapsed ? 'h-10 w-10 object-contain object-center mx-auto' : 'h-12 w-auto'}`}
                     onError={() => setLogoFailed(true)}
                     animate={{ scale: collapsed ? 0.9 : 1 }}
                   />
@@ -188,7 +188,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
           )}
 
           {/* Navigation */}
-          <nav className="space-y-2">
+          <nav className={`space-y-2 ${collapsed && !isMobile ? 'px-1' : ''}`}>
             <NavItem href="/dashboard" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
                 <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zM13 21h8V11h-8v10zM13 3v6h8V3h-8z"/>
@@ -291,7 +291,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
         </div>
 
         {/* Premium Bottom Toggle Button */}
-        {!mobile && (
+        {!isMobile && (
           <motion.div 
             className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50"
             whileHover={{ scale: 1.05, y: -2 }}
@@ -350,7 +350,7 @@ export default function Sidebar({ mobileOpen, onClose, collapsed: collapsedProp,
         )}
 
         {/* Enhanced Brand Accent Stripes - moved above button */}
-        {!mobile && (
+        {!isMobile && (
           <div className="absolute bottom-20 left-0 right-0 overflow-hidden">
             <motion.div 
               className={`flex ${collapsed ? 'flex-col items-center' : 'flex-row'} transition-all duration-300`}

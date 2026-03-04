@@ -47,6 +47,7 @@ export function getAccessToken(): string | null {
   }
 }
 
+
 export function clearAccessToken() {
   try {
     // use setAccessToken to ensure auth events are emitted

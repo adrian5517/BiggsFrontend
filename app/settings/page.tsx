@@ -47,6 +47,11 @@ type AdminSettings = {
     notifyOnJobFailure: boolean
     notifyOnRetentionRun: boolean
   }
+  storagePaths: {
+    latestFilesPath: string
+    localScanPath: string
+    allowedRoots: string
+  }
 }
 
 type MlPredictInput = {
@@ -84,6 +89,7 @@ const defaultSettings: AdminSettings = {
   security: { retentionApplyRole: 'admin', requireDeleteConfirm: true, allowForceRecombine: true },
   uiPreferences: { backupViewMode: 'file', tableDensity: 'comfortable', timezone: 'Asia/Manila' },
   notifications: { emailEnabled: false, webhookEnabled: false, webhookUrl: '', notifyOnJobFailure: true, notifyOnRetentionRun: false },
+  storagePaths: { latestFilesPath: 'latest', localScanPath: 'latest', allowedRoots: '' },
 }
 
 function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -181,6 +187,30 @@ export default function SettingsPage() {
   const [mlDiagnostics, setMlDiagnostics] = useState<any>(null)
   const [branchOptions, setBranchOptions] = useState<string[]>([])
   const [itemCodeOptions, setItemCodeOptions] = useState<ItemOption[]>([])
+
+  const pickFolderPath = async (apply: (path: string) => void) => {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/admin/storage/pick-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await resp.json().catch(() => ({} as any))
+      if (!resp.ok) {
+        setStatusMsg(`❌ ${json?.message || 'Unable to open folder picker'}`)
+        return
+      }
+      const pickedPath = String(json?.path || '').trim()
+      if (!pickedPath) {
+        setStatusMsg('⚠ No folder selected.')
+        return
+      }
+      apply(pickedPath)
+      setStatusMsg(`✅ Folder selected: ${pickedPath}`)
+    } catch (err: any) {
+      setStatusMsg(`❌ ${err?.message || 'Failed to pick folder'}`)
+    }
+  }
   const [predictInput, setPredictInput] = useState<MlPredictInput>({
     item_code: 'BEF1',
     branch: 'AYALA-FRN',
@@ -588,6 +618,50 @@ export default function SettingsPage() {
                   <option value="true">Enabled</option>
                   <option value="false">Disabled</option>
                 </Select>
+              </Field>
+            </Section>
+
+            <Section title="Storage Paths" description="Configure where latest files are saved and what local folder Missing Scan uses.">
+              <Field label="Latest Files Save Path">
+                <div className="flex gap-2">
+                  <Input
+                    value={settings.storagePaths.latestFilesPath}
+                    onChange={(e) => setSettings({ ...settings, storagePaths: { ...settings.storagePaths, latestFilesPath: e.target.value } })}
+                    placeholder="C:\\data\\biggs\\latest"
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+                    onClick={() => pickFolderPath((pickedPath) => setSettings({ ...settings, storagePaths: { ...settings.storagePaths, latestFilesPath: pickedPath } }))}
+                  >
+                    Choose Path
+                  </button>
+                </div>
+              </Field>
+              <Field label="Missing Scan Local Path">
+                <div className="flex gap-2">
+                  <Input
+                    value={settings.storagePaths.localScanPath}
+                    onChange={(e) => setSettings({ ...settings, storagePaths: { ...settings.storagePaths, localScanPath: e.target.value } })}
+                    placeholder="C:\\data\\biggs\\latest"
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+                    onClick={() => pickFolderPath((pickedPath) => setSettings({ ...settings, storagePaths: { ...settings.storagePaths, localScanPath: pickedPath } }))}
+                  >
+                    Choose Path
+                  </button>
+                </div>
+              </Field>
+              <Field label="Allowed Roots (comma-separated)">
+                <Input
+                  value={settings.storagePaths.allowedRoots}
+                  onChange={(e) => setSettings({ ...settings, storagePaths: { ...settings.storagePaths, allowedRoots: e.target.value } })}
+                  placeholder="C:\\data\\biggs, D:\\shared\\biggs"
+                />
               </Field>
             </Section>
 

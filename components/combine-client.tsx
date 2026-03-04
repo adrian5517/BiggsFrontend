@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
@@ -770,22 +770,47 @@ export default function CombineClient() {
   }, [messages, filesProcessed, polledFilesProcessed, live]);
 
   useEffect(() => {
+    let hasLocalSavedWorkdir = false;
     try {
       const raw = localStorage.getItem(COMBINE_ACTIVE_JOB_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      const jobId = String(parsed?.jobId || "").trim();
-      const savedWorkdir = String(parsed?.workdir || "").trim();
-      if (jobId) {
-        setResumableJobId(jobId);
-        setResumeJobIdInput(jobId);
-      }
-      if (savedWorkdir) {
-        setWorkdir(savedWorkdir);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const jobId = String(parsed?.jobId || "").trim();
+        const savedWorkdir = String(parsed?.workdir || "").trim();
+        if (jobId) {
+          setResumableJobId(jobId);
+          setResumeJobIdInput(jobId);
+        }
+        if (savedWorkdir) {
+          hasLocalSavedWorkdir = true;
+          setWorkdir(savedWorkdir);
+        }
       }
     } catch {
       localStorage.removeItem(COMBINE_ACTIVE_JOB_KEY);
     }
+
+    if (hasLocalSavedWorkdir) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await fetchWithAuth(`${API_BASE}/api/admin/settings`, { method: "GET" });
+        if (!resp.ok || cancelled) return;
+        const json = await resp.json();
+        const storage = json?.settings?.storagePaths || {};
+        const sharedPath = String(storage.localScanPath || storage.latestFilesPath || "").trim();
+        if (!cancelled && sharedPath) {
+          setWorkdir(sharedPath);
+        }
+      } catch {
+        // ignore settings bootstrap failures
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1071,6 +1096,30 @@ export default function CombineClient() {
     toast.info("Combine stopped by user");
   };
 
+  const pickCombineWorkdir = async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/admin/storage/pick-folder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json?.message || "Unable to open folder picker");
+        return;
+      }
+      const pickedPath = String(json?.path || "").trim();
+      if (!pickedPath) {
+        toast.warning("No folder selected");
+        return;
+      }
+      setWorkdir(pickedPath);
+      toast.success("Working directory selected");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to pick folder");
+    }
+  };
+
   const hasResumeJob = !!String(resumeJobIdInput || resumableJobId || "").trim();
   const displayFilesProcessed = Math.max(filesProcessed, polledFilesProcessed);
   const displayFilesTotal = Math.max(filesTotal, polledFilesTotal);
@@ -1123,6 +1172,14 @@ export default function CombineClient() {
                 value={workdir}
                 onChange={e => setWorkdir(e.target.value)}
               />
+              <button
+                type="button"
+                className="cmb-btn cmb-btn-ghost"
+                style={{ marginTop: "8px" }}
+                onClick={pickCombineWorkdir}
+              >
+                <Ico.Folder /> Choose Path
+              </button>
             </div>
           </div>
 

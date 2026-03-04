@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
 const MANUAL_FETCH_PROGRESS_KEY = "manualFetch:lastProgress";
+const MANUAL_FETCH_DOWNLOAD_DIR_KEY = "manualFetch:downloadDir";
 
 /* ─────────────────────────── CSS ─────────────────────────── */
 const css = `
@@ -889,6 +890,7 @@ export default function ManualFetchClient() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [positions, setPositions] = useState("1,2");
+  const [downloadDir, setDownloadDir] = useState("latest");
   const [messages, setMessages] = useState<any[]>([]);
   const [live, setLive] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState("Idle");
@@ -906,9 +908,64 @@ export default function ManualFetchClient() {
   const lastSseDisconnectAtRef = useRef(0);
   const restoreToastShownRef = useRef(false);
 
+  const pickManualFetchFolder = async () => {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/admin/storage/pick-folder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json?.message || "Unable to open folder picker");
+        return;
+      }
+      const pickedPath = String(json?.path || "").trim();
+      if (!pickedPath) {
+        toast.warning("No folder selected");
+        return;
+      }
+      setDownloadDir(pickedPath);
+      toast.success("Manual fetch save folder selected");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to pick folder");
+    }
+  };
+
   useEffect(() => {
     if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedDownloadDir = String(window.localStorage.getItem(MANUAL_FETCH_DOWNLOAD_DIR_KEY) || "").trim();
+    if (savedDownloadDir) {
+      setDownloadDir(savedDownloadDir);
+      return;
+    }
+
+    let mounted = true;
+    void (async () => {
+      try {
+        const resp = await fetchWithAuth(`${API_BASE}/api/admin/settings`, { method: "GET" });
+        if (!resp.ok) return;
+        const json = await resp.json();
+        const defaultPath = String(json?.settings?.storagePaths?.latestFilesPath || "").trim();
+        if (mounted && defaultPath) setDownloadDir(defaultPath);
+      } catch {
+        // ignore bootstrap errors
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MANUAL_FETCH_DOWNLOAD_DIR_KEY, String(downloadDir || ""));
+  }, [downloadDir]);
 
   const persistProgress = (snapshot: any) => {
     try {
@@ -1310,6 +1367,7 @@ export default function ManualFetchClient() {
     };
     if (selected.length) body.branches = selected;
     if (positions.trim()) body.positions = positions;
+    if (String(downloadDir || "").trim()) body.downloadDir = String(downloadDir).trim();
 
     try {
       setMessages([]);
@@ -1419,6 +1477,26 @@ export default function ManualFetchClient() {
                 onChange={e => setPositions(e.target.value)}
                 placeholder="1,2"
               />
+            </div>
+          </div>
+
+          <div className="mfc-form-row" style={{ gridTemplateColumns: "1fr" }}>
+            <div className="mfc-field">
+              <label className="mfc-label">
+                <span className="mfc-label-icon"><Ico.Hash /></span>
+                Save Folder (Downloaded Files)
+              </label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  className="mfc-input"
+                  value={downloadDir}
+                  onChange={e => setDownloadDir(e.target.value)}
+                  placeholder="C:\\data\\biggs\\latest"
+                />
+                <button className="mfc-btn mfc-btn-ghost" type="button" onClick={pickManualFetchFolder}>
+                  Choose Path
+                </button>
+              </div>
             </div>
           </div>
 

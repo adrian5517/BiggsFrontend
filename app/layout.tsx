@@ -6,7 +6,6 @@ import { Kanit } from 'next/font/google'
 
 import './globals.css'
 import ClientShell from '@/components/client-shell'
-import { Toaster } from '@/components/ui/sonner'
 
 const kanit = Kanit({
   subsets: ['latin'],
@@ -41,7 +40,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ClientShell>
             {children}
           </ClientShell>
-          <Toaster richColors closeButton position="top-right" />
       </body>
     </html>
   )

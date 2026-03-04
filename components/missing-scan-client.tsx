@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect } from "react";
 import { fetchWithAuth, getAccessToken } from "@/utils/auth";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { shouldEmitToastOnce } from "@/utils/toast-dedupe";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
 const MISSING_SCAN_RESULT_KEY = "missingScan:lastResult";
 const MISSING_SCAN_SOURCE_KEY = "missingScan:sourceMode";
 const MISSING_SCAN_ACTIVE_QUEUE_JOB_KEY = "missingScan:activeQueueJob";
+const MISSING_SCAN_LOCAL_WORKDIR_KEY = "missingScan:localWorkdir";
 const MOCK_BRANCHES = ["AYALA-FRN", "BETA", "B-CPOL", "B-SMS", "BIA", "BMC", "BRLN", "BPAG", "BGRAN", "BTAB", "CAMALIG", "CNTRO", "DAET", "DAR", "EME", "GOA", "IRIGA", "MAGS", "MAS", "OLA", "PACML", "ROB-FRN", "SANPILI", "SIPOCOT", "SMLGZ-FRN", "SMLIP", "SMNAG", "ROXAS"];
 
 /* ─────────────────────────── CSS ─────────────────────────── */
@@ -318,6 +319,25 @@ const css = `
 .chip-date { background: rgba(232,168,32,0.09); color: var(--gold); border: 1px solid rgba(232,168,32,0.2); }
 .chip-red  { background: rgba(192,39,45,0.07); color: var(--red); border: 1px solid rgba(192,39,45,0.18); }
 
+.msc-status-banner {
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  border: 1px solid transparent;
+}
+.msc-status-banner.pending {
+  background: rgba(192,39,45,0.07);
+  color: #8f1d22;
+  border-color: rgba(192,39,45,0.22);
+}
+.msc-status-banner.ready {
+  background: rgba(34,197,94,0.1);
+  color: #166534;
+  border-color: rgba(34,197,94,0.25);
+}
+
 /* ── Actions ── */
 .msc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
 
@@ -607,15 +627,62 @@ export default function MissingScanClient() {
   const [queueStatus, setQueueStatus] = useState("");
   const [activeQueueJobId, setActiveQueueJobId] = useState("");
   const [scanSource, setScanSource] = useState<"report_pos_sended" | "latest">("report_pos_sended");
+  const [localWorkdir, setLocalWorkdir] = useState("latest");
   const queueEsRef = useRef<EventSource | null>(null);
   const lastQueueDisconnectAtRef = useRef<number>(0);
+  const latestScanResultRef = useRef<any>(null);
+  const scanWatchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const itemsPerPage = 10;
+
+  const getMissingSummary = (result: any) => {
+    const rows = Array.isArray(result?.results) ? result.results : [];
+    const pendingPairs = rows.filter((row: any) => Array.isArray(row?.missingDates) && row.missingDates.length > 0);
+    const missingCount = pendingPairs.reduce((sum: number, row: any) => sum + (Array.isArray(row?.missingDates) ? row.missingDates.length : 0), 0);
+    const sentCount = rows.reduce((sum: number, row: any) => sum + Number(row?.existingCount || 0), 0);
+    return {
+      missingCount,
+      pendingStorePosCount: pendingPairs.length,
+      sentCount,
+    };
+  };
+
+  const notifySubmissionUpdates = (nextResult: any, fromWatch = false) => {
+    const prevResult = latestScanResultRef.current;
+    const nextSummary = getMissingSummary(nextResult);
+
+    if (!fromWatch && nextSummary.missingCount > 0 && shouldEmitToastOnce(`missing-scan-pending:${nextSummary.missingCount}`, 8000)) {
+      toast.warning(
+        `${nextSummary.missingCount} pending POS report(s) from ${nextSummary.pendingStorePosCount} store/POS.`,
+        { id: "missing-scan-pending" }
+      );
+    }
+
+    if (prevResult) {
+      const prevSummary = getMissingSummary(prevResult);
+      const newlySentCount = Math.max(0, prevSummary.missingCount - nextSummary.missingCount);
+
+      if (newlySentCount > 0 && shouldEmitToastOnce(`missing-scan-newly-sent:${newlySentCount}:${nextSummary.missingCount}`, 5000)) {
+        toast.success(`${newlySentCount} new POS report(s) received. Ready to fetch.`, { id: "missing-scan-new-sent" });
+        setMessages((m) => [...m, `Update detected: ${newlySentCount} new POS report(s) received and ready to fetch.`]);
+      }
+
+      if (prevSummary.missingCount > 0 && nextSummary.missingCount === 0 && shouldEmitToastOnce("missing-scan-all-sent", 10000)) {
+        toast.success("All pending POS reports are now sent. Ready to fetch all.", { id: "missing-scan-all-sent" });
+        setMessages((m) => [...m, "All pending POS reports are now sent and ready to fetch."]);
+      }
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = window.localStorage.getItem(MISSING_SCAN_SOURCE_KEY);
     if (saved === "report_pos_sended" || saved === "latest") {
       setScanSource(saved);
+    }
+
+    const savedLocalWorkdir = String(window.localStorage.getItem(MISSING_SCAN_LOCAL_WORKDIR_KEY) || '').trim();
+    if (savedLocalWorkdir) {
+      setLocalWorkdir(savedLocalWorkdir);
     }
 
     try {
@@ -642,6 +709,41 @@ export default function MissingScanClient() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(MISSING_SCAN_SOURCE_KEY, scanSource);
   }, [scanSource]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MISSING_SCAN_LOCAL_WORKDIR_KEY, localWorkdir || '');
+  }, [localWorkdir]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem(MISSING_SCAN_LOCAL_WORKDIR_KEY)) return;
+
+    (async () => {
+      try {
+        const resp = await fetchWithAuth(`${API_BASE}/api/admin/settings`, { method: 'GET' });
+        if (!resp.ok) return;
+        const json = await resp.json();
+        const settings = json?.settings || {};
+        const storage = settings?.storagePaths || {};
+        const defaultPath = String(storage.localScanPath || storage.latestFilesPath || '').trim();
+        if (mounted && defaultPath) {
+          setLocalWorkdir(defaultPath);
+        }
+      } catch {
+        // ignore if settings endpoint is not accessible for this user
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    latestScanResultRef.current = scanResult;
+  }, [scanResult]);
 
   useEffect(() => {
     if (!activeQueueJobId) return;
@@ -727,19 +829,26 @@ export default function MissingScanClient() {
   const statusDetailUnavailableReason = scanResult?.failureReason
     ? `Detailed report status unavailable: ${String(scanResult.failureReason)}`
     : "";
+  const currentSummary = getMissingSummary(scanResult);
+  const isReadyToFetch = currentSummary.missingCount === 0;
 
-  const runScan = async ({ showStartMessages = true }: { showStartMessages?: boolean } = {}) => {
+  const runScan = async ({ showStartMessages = true, background = false }: { showStartMessages?: boolean; background?: boolean } = {}) => {
     const body: any = { positions, source: scanSource };
     if (branches.length) body.branches = branches;
     if (start) body.start = start;
     if (end) body.end = end;
+    if (scanSource === 'latest' && String(localWorkdir || '').trim()) {
+      body.workdir = String(localWorkdir).trim();
+    }
 
-    setLive(true);
-    setProgressValue(20);
+    if (!background) {
+      setLive(true);
+      setProgressValue(20);
+    }
     if (showStartMessages) {
       setMessages(m => [...m, `Scan started (${branches.length} branches)`]);
       setMessages(m => [...m, `Date range: ${start || "auto"} to ${end || "auto"}`]);
-      setMessages(m => [...m, `Source: ${scanSource === "latest" ? "Local latest folder" : "Scraper (report_pos_sended)"}`]);
+      setMessages(m => [...m, `Source: ${scanSource === "latest" ? `Local path (${String(localWorkdir || 'latest').trim() || 'latest'})` : "Scraper (report_pos_sended)"}`]);
     }
 
     try {
@@ -748,16 +857,19 @@ export default function MissingScanClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      setProgressValue(65);
+      if (!background) setProgressValue(65);
       const json = await resp.json();
       if (!resp.ok) {
         setMessages(m => [...m, `Error: ${json?.message ?? 'Scan failed'}`]);
-        toast.error(json?.message ?? "Scan failed");
-        setProgressValue(0);
-        setLive(false);
+        if (!background) toast.error(json?.message ?? "Scan failed");
+        if (!background) {
+          setProgressValue(0);
+          setLive(false);
+        }
         return;
       }
 
+      notifySubmissionUpdates(json, background);
       setScanResult(json);
       setCurrentPage(1);
       setMessages(m => [...m, `Scan complete: ${json?.results?.length || 0} rows generated`]);
@@ -770,24 +882,74 @@ export default function MissingScanClient() {
           setMessages(m => [...m, `Warning: ${String(warning)}`]);
         }
       }
-      setProgressValue(100);
-      setLive(false);
-      toast.success(`Missing scan complete (${json?.results?.length || 0} rows)`);
+      if (!background) {
+        setProgressValue(100);
+        setLive(false);
+        toast.success(`Missing scan complete (${json?.results?.length || 0} rows)`);
+      }
       if (typeof window !== "undefined") {
         window.localStorage.setItem(MISSING_SCAN_RESULT_KEY, JSON.stringify(json));
         window.dispatchEvent(new CustomEvent("missing-scan-result", { detail: json }));
       }
     } catch (e) {
       setMessages(m => [...m, `Error: ${String(e)}`]);
-      toast.error("Missing scan failed");
-      setProgressValue(0);
-      setLive(false);
+      if (!background) {
+        toast.error("Missing scan failed");
+        setProgressValue(0);
+        setLive(false);
+      }
     }
   };
 
   const handleStartScan = async () => {
     await runScan({ showStartMessages: true });
   };
+
+  const pickFolderForLocalScan = async () => {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/api/admin/storage/pick-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json?.message || 'Unable to open folder picker');
+        return;
+      }
+      const pickedPath = String(json?.path || '').trim();
+      if (!pickedPath) {
+        toast.warning('No folder selected');
+        return;
+      }
+      setLocalWorkdir(pickedPath);
+      toast.success('Local folder selected');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to pick folder');
+    }
+  };
+
+  useEffect(() => {
+    if (scanSource !== "report_pos_sended") return;
+    if (!scanResult) return;
+    if (activeQueueJobId || queueing || live) return;
+
+    if (scanWatchTimerRef.current) {
+      clearInterval(scanWatchTimerRef.current);
+      scanWatchTimerRef.current = null;
+    }
+
+    scanWatchTimerRef.current = setInterval(() => {
+      void runScan({ showStartMessages: false, background: true });
+    }, 60_000);
+
+    return () => {
+      if (scanWatchTimerRef.current) {
+        clearInterval(scanWatchTimerRef.current);
+        scanWatchTimerRef.current = null;
+      }
+    };
+  }, [scanSource, scanResult, activeQueueJobId, queueing, live]);
 
   const watchQueueJobAndRefresh = (jobId: string) => {
     if (!jobId) return;
@@ -979,6 +1141,25 @@ export default function MissingScanClient() {
               </span>
             )}
           </div>
+
+          {scanResult && (
+            <div className="msc-chips" style={{ marginTop: "12px" }}>
+              <span className={`msc-chip ${isReadyToFetch ? "chip-sky" : "chip-red"}`}>
+                Pending Reports: {currentSummary.missingCount}
+              </span>
+              <span className="msc-chip chip-sky">Affected Store/POS: {currentSummary.pendingStorePosCount}</span>
+              <span className="msc-chip chip-date">Sent Reports Seen: {currentSummary.sentCount}</span>
+              <span className="msc-chip chip-sky">Source: {scanResult?.sourceUsed || scanSource}</span>
+            </div>
+          )}
+
+          {scanResult && (
+            <div className={`msc-status-banner ${isReadyToFetch ? "ready" : "pending"}`}>
+              {currentSummary.missingCount > 0
+                ? `⚠ ${currentSummary.missingCount} report(s) are still pending. Once they are sent, you'll get a notification that new POS reports are ready to fetch.`
+                : "✅ All reports are currently sent for this scan range. Ready to fetch."}
+            </div>
+          )}
         </div>
 
         <div className="msc-output-grid" style={{ padding: "14px", gridTemplateColumns: "1fr", gap: "14px" }}>
@@ -1024,7 +1205,7 @@ export default function MissingScanClient() {
                 <span className="msc-panel-dot" style={{ background: scanResult ? "#4ade80" : undefined }} />
                 <Ico.Results /> Scan Results
               </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid var(--border)', borderRadius: '999px', padding: '2px', background: '#fff' }}>
                   <button
                     type="button"
@@ -1043,6 +1224,27 @@ export default function MissingScanClient() {
                     Local
                   </button>
                 </div>
+                {scanSource === 'latest' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 260px', minWidth: 0, maxWidth: '420px' }}>
+                    <button
+                      type="button"
+                      className="msc-btn msc-btn-sky"
+                      style={{ padding: '6px 8px', fontSize: '10px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                      onClick={pickFolderForLocalScan}
+                    >
+                      Choose Path
+                    </button>
+                    <input
+                      type="text"
+                      className="msc-input"
+                      style={{ width: '100%', minWidth: 0, height: '30px', fontSize: '10px', padding: '6px 8px' }}
+                      value={localWorkdir}
+                      onChange={(e) => setLocalWorkdir(e.target.value)}
+                      placeholder="Local folder path (e.g. C:\\data\\biggs\\latest)"
+                      title="Missing Scan local folder path"
+                    />
+                  </div>
+                )}
                 {scanResult && <span className="msc-panel-count">{scanResult.results?.length || 0} rows</span>}
                 {scanResult && scanResult.results && scanResult.results.length > 0 && (
                   <button
