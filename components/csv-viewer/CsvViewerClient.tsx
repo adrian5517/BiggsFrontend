@@ -62,6 +62,7 @@ function PreviewModal({
   const [content, setContent] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
+  const [topProducts, setTopProducts] = useState<{ name: string, amount: number, quantity: number }[]>([]);
 
   useEffect(() => {
     if (!file) return;
@@ -74,11 +75,40 @@ function PreviewModal({
         const parsed = parseCsvTable(t);
         setHeaders(parsed.headers);
         setRows(parsed.rows);
+
+        // Compute best-selling products
+        const nameIdx = parsed.headers.findIndex(h => h === "PRODUCT NAME" || h === "ITE_DESC" || h === "ITEM CODE" || h === "INCODE");
+        const amountIdx = parsed.headers.findIndex(h => h === "AMOUNT" || h === "UNT_PRIC");
+        const qtyIdx = parsed.headers.findIndex(h => h === "QUANTITY");
+        const dateIdx = parsed.headers.findIndex(h => h === "DATE" || h === "TRANSDATE");
+
+        if (nameIdx >= 0 && amountIdx >= 0 && dateIdx >= 0) {
+          const productMap = new Map<string, { name: string, amount: number, quantity: number }>();
+          for (const row of parsed.rows) {
+            const name = String(row[nameIdx] || "UNKNOWN").trim();
+            const amount = Number(row[amountIdx] || 0);
+            const quantity = qtyIdx >= 0 ? Number(row[qtyIdx] || 1) : 1;
+            if (amount <= 0 && quantity <= 0) continue;
+            if (!name || name === "UNKNOWN") continue;
+            const prev = productMap.get(name);
+            if (prev) {
+              prev.amount += amount;
+              prev.quantity += quantity;
+            } else {
+              productMap.set(name, { name, amount, quantity });
+            }
+          }
+          const topList = Array.from(productMap.values()).sort((a, b) => b.amount - a.amount).slice(0, 10);
+          setTopProducts(topList);
+        } else {
+          setTopProducts([]);
+        }
       })
       .catch(() => {
         setContent('Failed to load preview');
         setHeaders([]);
         setRows([]);
+        setTopProducts([]);
       });
 
     return () => {
@@ -110,6 +140,33 @@ function PreviewModal({
             </button>
             <button onClick={onClose} className="text-sm text-gray-600 px-3 py-1.5 h-9 border rounded">Close</button>
           </div>
+        </div>
+
+        {/* Best-selling products section */}
+        <div className="px-4 py-3 border-b bg-yellow-50">
+          <div className="text-sm font-semibold text-yellow-700 mb-2">Best-Selling Products (This File)</div>
+          {topProducts.length > 0 ? (
+            <table className="min-w-full table-auto text-sm mb-2">
+              <thead>
+                <tr>
+                  <th className="p-2 text-left text-xs font-semibold text-yellow-700">Product</th>
+                  <th className="p-2 text-left text-xs font-semibold text-yellow-700">Amount</th>
+                  <th className="p-2 text-left text-xs font-semibold text-yellow-700">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topProducts.map((item, idx) => (
+                  <tr key={item.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-yellow-100'}>
+                    <td className="p-2 text-xs font-semibold text-yellow-900">{idx + 1}. {item.name}</td>
+                    <td className="p-2 text-xs font-mono text-yellow-900">₱{item.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                    <td className="p-2 text-xs font-mono text-yellow-900">{item.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-xs text-yellow-700">No sales data found in this file.</div>
+          )}
         </div>
 
         <div className="overflow-auto" style={{ maxHeight: '60vh' }}>

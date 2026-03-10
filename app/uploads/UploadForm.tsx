@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchWithAuth } from '@/utils/auth';
+import { fetchWithAuth, getUser } from '@/utils/auth';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/input';
@@ -20,10 +20,56 @@ export default function UploadForm() {
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [isManager, setIsManager] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
+        const currentUser = getUser();
+        const role = String(currentUser?.role || '').toLowerCase();
+        const managerBranchesRaw = currentUser?.managedBranches || currentUser?.managed_branches || currentUser?.branches;
+        const managerBranches = Array.isArray(managerBranchesRaw)
+          ? managerBranchesRaw.map((value: any) => String(value || '').trim()).filter(Boolean)
+          : [];
+
+        if (role === 'manager') {
+          setIsManager(true);
+          const userId = String(currentUser?.id || currentUser?._id || '').trim();
+
+          let managerScopeFromApi: string[] = [];
+          if (userId) {
+            const apiBases = Array.from(new Set([
+              process.env.NEXT_PUBLIC_API_BASE_URL,
+              API_BASE,
+              'http://localhost:5000',
+              'http://127.0.0.1:5000',
+            ].filter((value): value is string => Boolean(String(value || '').trim()))));
+
+            for (const base of apiBases) {
+              const response = await fetchWithAuth(`${base}/api/auth/users/${encodeURIComponent(userId)}`, { method: 'GET' });
+              if (response.status === 599) continue;
+              if (!response.ok) continue;
+              const json = await response.json().catch(() => ({}));
+              const raw = json?.user?.managedBranches || json?.user?.managed_branches || json?.user?.branches;
+              const parsed = Array.isArray(raw)
+                ? raw.map((value: any) => String(value || '').trim()).filter(Boolean)
+                : (typeof raw === 'string' ? raw.split(',').map((value: string) => String(value || '').trim()).filter(Boolean) : []);
+              if (parsed.length > 0) {
+                managerScopeFromApi = parsed;
+                break;
+              }
+            }
+          }
+
+          const uniqueManagerBranches = Array.from(new Set((managerScopeFromApi.length ? managerScopeFromApi : managerBranches)));
+          setBranches(uniqueManagerBranches);
+          setBranch(uniqueManagerBranches[0] || '');
+          if (!uniqueManagerBranches.length) {
+            setMessage({ type: 'error', text: 'No branch scope assigned to your manager account. Contact admin.' });
+          }
+          return;
+        }
+
         const res = await fetchWithAuth(`${API_BASE}/api/fetch/branches`, { method: 'GET' });
         if (!res.ok) {
           setBranches(DEFAULT_BRANCHES);
@@ -88,18 +134,29 @@ export default function UploadForm() {
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="upload-branch">Branch</Label>
-              <Select value={branch || 'all-branches'} onValueChange={(v) => setBranch(v === 'all-branches' ? '' : v)}>
-                <SelectTrigger id="upload-branch">
+              <Select
+                value={isManager ? (branch || branches[0] || '') : (branch || 'all-branches')}
+                onValueChange={(v) => {
+                  if (isManager) return;
+                  setBranch(v === 'all-branches' ? '' : v);
+                }}
+                disabled={isManager}
+              >
+                <SelectTrigger id="upload-branch" disabled={isManager}>
                   <SelectValue placeholder="Select branch" />
                 </SelectTrigger>
                 <SelectContent side="bottom" avoidCollisions={false}>
-                  <SelectItem value="all-branches">Select branch</SelectItem>
+                  {!isManager && <SelectItem value="all-branches">Select branch</SelectItem>}
                   {branches.map((b) => (
                     <SelectItem key={b} value={b}>{b}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{branches.length || DEFAULT_BRANCHES.length} branches available.</p>
+              <p className="text-xs text-muted-foreground">
+                {isManager
+                  ? `Your branch scope: ${branches.length || 0}`
+                  : `${branches.length || DEFAULT_BRANCHES.length} branches available.`}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -157,7 +214,7 @@ export default function UploadForm() {
                 variant="outline"
                 onClick={() => {
                   setFiles(null);
-                  setBranch('');
+                  setBranch(isManager ? (branches[0] || '') : '');
                   setPos('1');
                   setDate('');
                   setMessage(null);

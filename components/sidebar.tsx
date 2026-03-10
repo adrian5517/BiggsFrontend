@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getUser } from '@/utils/auth'
 
 type NavItemProps = {
   href: string
@@ -65,7 +66,35 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
   }, [collapsedProp, isControlled])
   const collapsed = isControlled ? !!collapsedProp : internalCollapsed
   const [logoFailed, setLogoFailed] = useState(false)
+  const [role, setRole] = useState<string>('user')
   const baseMobileWidth = 320
+
+  useEffect(() => {
+    const readRole = () => {
+      try {
+        const user = getUser()
+        setRole(String(user?.role || 'user').toLowerCase())
+      } catch {
+        setRole('user')
+      }
+    }
+
+    readRole()
+    const onStorage = (e: StorageEvent) => {
+      if (!e || e.key === 'user' || e.key === 'accessToken') readRole()
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('auth:token', readRole as EventListener)
+    window.addEventListener('auth:logout', readRole as EventListener)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('auth:token', readRole as EventListener)
+      window.removeEventListener('auth:logout', readRole as EventListener)
+    }
+  }, [])
+
+  const isAdmin = role === 'admin'
+  const isManager = role === 'manager'
 
   return (
     <>
@@ -202,18 +231,34 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             }>
-              Uploads
+              {isManager ? 'Send Reports' : 'Uploads'}
             </NavItem>
 
-            <NavItem href="/files" collapsed={collapsed} icon={
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
-                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            }>
-              Files
-            </NavItem>
+            {isManager && (
+              <NavItem href="/my-reports" collapsed={collapsed} icon={
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <polyline points="14 2 14 8 20 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="16" y1="13" x2="8" y2="13" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }>
+                My Sent Reports
+              </NavItem>
+            )}
 
-            <NavItem href="/missing-scan" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/files" collapsed={collapsed} icon={
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                  <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }>
+                Files
+              </NavItem>
+            )}
+
+            {isAdmin && (
+              <NavItem href="/missing-scan" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <path d="M3 7V5a2 2 0 0 1 2-2h2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M17 3h2a2 2 0 0 1 2 2v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -223,25 +268,31 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
               </svg>
             }>
               Missing Scan
-            </NavItem>
+              </NavItem>
+            )}
 
-            <NavItem href="/admin/fetch-logs" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/admin/fetch-logs" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <path d="M3 7h18M3 11h18M7 15h10M7 19h10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             }>
               Fetch Logs
-            </NavItem>
+              </NavItem>
+            )}
 
-            <NavItem href="/master" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/master" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             }>
               Master
-            </NavItem>
+              </NavItem>
+            )}
 
-            <NavItem href="/combine" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/combine" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <circle cx="9" cy="9" r="3" strokeWidth="2"/>
                 <circle cx="15" cy="9" r="3" strokeWidth="2"/>
@@ -250,16 +301,19 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
               </svg>
             }>
               Combine
-            </NavItem>
+              </NavItem>
+            )}
 
-            <NavItem href="/jobs" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/jobs" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 <rect x="8" y="2" width="8" height="4" rx="1" ry="1" strokeWidth="2"/>
               </svg>
             }>
               Jobs
-            </NavItem>
+              </NavItem>
+            )}
 
             {/* Premium divider */}
             <div className="my-6">
@@ -276,17 +330,19 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
                 <circle cx="12" cy="7" r="4" strokeWidth="2"/>
               </svg>
             }>
-              Users
+              {isAdmin ? 'Users' : 'Profile'}
             </NavItem>
 
-            <NavItem href="/settings" collapsed={collapsed} icon={
+            {isAdmin && (
+              <NavItem href="/settings" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
                 <circle cx="12" cy="12" r="3" strokeWidth="2"/>
                 <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" strokeWidth="2"/>
               </svg>
             }>
               Settings
-            </NavItem>
+              </NavItem>
+            )}
           </nav>
         </div>
 

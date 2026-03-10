@@ -18,6 +18,18 @@ type JobItem = {
   updatedAt?: string | null;
 };
 
+type JobGroup = {
+  key: string;
+  month?: string;
+  mode?: string;
+  status?: string;
+  count?: number;
+  filesTotal?: number;
+  filesCompleted?: number;
+  rowsInserted?: number;
+  items: JobItem[];
+};
+
 function statusChip(status: string) {
   const s = String(status || '').toLowerCase();
   if (s.includes('fail') || s.includes('error')) return 'bg-red-100 text-red-700 border-red-200';
@@ -31,6 +43,7 @@ export default function JobsLandingPage() {
   const [jobId, setJobId] = useState("");
   const [lastJobId, setLastJobId] = useState("");
   const [jobs, setJobs] = useState<JobItem[]>([]);
+  const [jobGroups, setJobGroups] = useState<JobGroup[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [refreshSeconds, setRefreshSeconds] = useState(15);
   const [timeZone, setTimeZone] = useState('Asia/Manila');
@@ -58,12 +71,26 @@ export default function JobsLandingPage() {
   const loadJobs = async () => {
     try {
       setLoadingJobs(true);
-      const res = await fetch(`${API_BASE}/api/fetch/jobs?limit=10`, { cache: 'no-store' });
+      const res = await fetch(`${API_BASE}/api/fetch/jobs?limit=50&groupBy=month,mode`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      setJobs(Array.isArray(data?.items) ? data.items : []);
+      if (data?.grouped && Array.isArray(data?.groups)) {
+        const groups = data.groups
+          .map((group: JobGroup) => ({
+            ...group,
+            items: Array.isArray(group?.items) ? group.items : [],
+          }))
+          .filter((group: JobGroup) => Array.isArray(group.items));
+        setJobGroups(groups);
+        setJobs(groups.flatMap((group: JobGroup) => group.items));
+      } else {
+        const nextJobs = Array.isArray(data?.items) ? data.items : [];
+        setJobs(nextJobs);
+        setJobGroups([]);
+      }
     } catch (_) {
       setJobs([]);
+      setJobGroups([]);
     } finally {
       setLoadingJobs(false);
     }
@@ -179,7 +206,7 @@ export default function JobsLandingPage() {
 
       <div className="max-w-5xl rounded-lg border bg-white shadow-sm">
         <div className="px-4 py-3 border-b flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-800">Recent Jobs</h2>
+          <h2 className="text-sm font-semibold text-slate-800">Recent Jobs (Grouped)</h2>
           <div className="flex items-center gap-3">
             <span className="text-[11px] text-slate-500">Auto refresh: {refreshSeconds}s</span>
             <button
@@ -192,52 +219,103 @@ export default function JobsLandingPage() {
           </div>
         </div>
         <div className="overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-3 py-2 text-left">Job ID</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Mode</th>
-                <th className="px-3 py-2 text-right">Files</th>
-                <th className="px-3 py-2 text-right">Rows</th>
-                <th className="px-3 py-2 text-left">Updated</th>
-                <th className="px-3 py-2 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingJobs ? (
-                <tr>
-                  <td className="px-3 py-3 text-slate-500" colSpan={7}>Loading jobs...</td>
-                </tr>
-              ) : jobs.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-3 text-slate-500" colSpan={7}>No recent jobs found.</td>
-                </tr>
-              ) : jobs.map((job) => (
-                <tr key={job.jobId} className="border-t">
-                  <td className="px-3 py-2 font-mono text-[11px]">{job.jobId}</td>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded border ${statusChip(job.status)}`}>
-                      {job.status}
+          {loadingJobs ? (
+            <div className="px-3 py-3 text-slate-500 text-xs">Loading jobs...</div>
+          ) : jobs.length === 0 ? (
+            <div className="px-3 py-3 text-slate-500 text-xs">No recent jobs found.</div>
+          ) : jobGroups.length > 0 ? (
+            <div className="p-3 space-y-2">
+              {jobGroups.map((group) => (
+                <details key={group.key} className="rounded-md border bg-slate-50" open>
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs flex items-center justify-between">
+                    <span className="font-medium text-slate-800">
+                      {group.month || 'unknown-month'} / {group.mode || 'unknown-mode'}
                     </span>
-                  </td>
-                  <td className="px-3 py-2">{job.mode || '—'}</td>
-                  <td className="px-3 py-2 text-right">{Number(job.filesCompleted || 0)}/{Number(job.filesTotal || 0)}</td>
-                  <td className="px-3 py-2 text-right">{Number(job.rowsInserted || 0).toLocaleString()}</td>
-                  <td className="px-3 py-2">{formatDate(job.updatedAt || job.createdAt)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/jobs/${encodeURIComponent(job.jobId)}`)}
-                      className="text-sky-700 hover:text-sky-800 font-medium"
-                    >
-                      Open
-                    </button>
-                  </td>
-                </tr>
+                    <span className="text-slate-600">
+                      jobs: {Number(group.count || group.items.length)} • files: {Number(group.filesCompleted || 0)}/{Number(group.filesTotal || 0)} • rows: {Number(group.rowsInserted || 0).toLocaleString()}
+                    </span>
+                  </summary>
+                  <div className="overflow-auto border-t bg-white">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Job ID</th>
+                          <th className="px-3 py-2 text-left">Status</th>
+                          <th className="px-3 py-2 text-right">Files</th>
+                          <th className="px-3 py-2 text-right">Rows</th>
+                          <th className="px-3 py-2 text-left">Updated</th>
+                          <th className="px-3 py-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((job) => (
+                          <tr key={job.jobId} className="border-t">
+                            <td className="px-3 py-2 font-mono text-[11px]">{job.jobId}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded border ${statusChip(job.status)}`}>
+                                {job.status}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right">{Number(job.filesCompleted || 0)}/{Number(job.filesTotal || 0)}</td>
+                            <td className="px-3 py-2 text-right">{Number(job.rowsInserted || 0).toLocaleString()}</td>
+                            <td className="px-3 py-2">{formatDate(job.updatedAt || job.createdAt)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/jobs/${encodeURIComponent(job.jobId)}`)}
+                                className="text-sky-700 hover:text-sky-800 font-medium"
+                              >
+                                Open
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left">Job ID</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Mode</th>
+                  <th className="px-3 py-2 text-right">Files</th>
+                  <th className="px-3 py-2 text-right">Rows</th>
+                  <th className="px-3 py-2 text-left">Updated</th>
+                  <th className="px-3 py-2 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job) => (
+                  <tr key={job.jobId} className="border-t">
+                    <td className="px-3 py-2 font-mono text-[11px]">{job.jobId}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded border ${statusChip(job.status)}`}>
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">{job.mode || '—'}</td>
+                    <td className="px-3 py-2 text-right">{Number(job.filesCompleted || 0)}/{Number(job.filesTotal || 0)}</td>
+                    <td className="px-3 py-2 text-right">{Number(job.rowsInserted || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2">{formatDate(job.updatedAt || job.createdAt)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/jobs/${encodeURIComponent(job.jobId)}`)}
+                        className="text-sky-700 hover:text-sky-800 font-medium"
+                      >
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </main>

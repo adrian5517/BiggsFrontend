@@ -220,6 +220,57 @@ const styles = `
     overflow: hidden;
   }
 
+  .fl-folder-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 10px;
+  }
+
+  .fl-folder {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .fl-folder:last-child {
+    margin-bottom: 0;
+  }
+
+  .fl-folder-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+  }
+
+  .fl-folder-title {
+    font-weight: 600;
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .fl-folder-meta {
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+    font-family: 'DM Mono', monospace;
+    white-space: nowrap;
+  }
+
+  .fl-folder-table {
+    overflow: auto;
+  }
+
   .fl-table {
     width: 100%;
     border-collapse: collapse;
@@ -537,6 +588,7 @@ export default function FetchLogsClient() {
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [quickSearch, setQuickSearch] = useState<string>('')
+  const [viewMode, setViewMode] = useState<'folder' | 'table'>('folder')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalItem, setModalItem] = useState<any>(null)
@@ -769,6 +821,29 @@ export default function FetchLogsClient() {
     })
   }, [items, quickSearch])
 
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, { key: string; branch: string; workDate: string; items: any[]; totalSize: number }>()
+
+    for (const it of filteredItems) {
+      const branch = String(it.branch || 'unknown')
+      const workDate = formatWorkDate(it.work_date || it.workDate) || 'unknown-date'
+      const key = `${branch}|${workDate}`
+      if (!groups.has(key)) {
+        groups.set(key, { key, branch, workDate, items: [], totalSize: 0 })
+      }
+      const group = groups.get(key)!
+      group.items.push(it)
+      const size = Number(it.size || 0)
+      if (Number.isFinite(size) && size > 0) group.totalSize += size
+    }
+
+    return Array.from(groups.values()).sort((a, b) => {
+      const dateCmp = String(b.workDate).localeCompare(String(a.workDate))
+      if (dateCmp !== 0) return dateCmp
+      return String(a.branch).localeCompare(String(b.branch))
+    })
+  }, [filteredItems])
+
   return (
     <>
       <style>{styles}</style>
@@ -807,6 +882,16 @@ export default function FetchLogsClient() {
                 <option value="running">Running</option>
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="fl-field-group">
+            <div className="fl-label">View</div>
+            <div className="fl-select-wrap">
+              <select className="fl-select" value={viewMode} onChange={e => setViewMode(e.target.value as 'folder' | 'table')}>
+                <option value="folder">Folder View</option>
+                <option value="table">Table View</option>
               </select>
             </div>
           </div>
@@ -885,7 +970,7 @@ export default function FetchLogsClient() {
         </div>
 
         {/* Table */}
-        <div className="fl-table-wrap">
+        <div className={viewMode === 'folder' ? 'fl-folder-wrap' : 'fl-table-wrap'}>
           {loading ? (
             <div className="fl-loading">
               <div className="fl-spinner" />
@@ -893,6 +978,75 @@ export default function FetchLogsClient() {
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="fl-empty">No records found</div>
+          ) : viewMode === 'folder' ? (
+            <div>
+              {groupedItems.map((group) => (
+                <details key={group.key} className="fl-folder" open>
+                  <summary className="fl-folder-summary">
+                    <span className="fl-folder-title">
+                      📁 {group.branch} / {group.workDate}
+                    </span>
+                    <span className="fl-folder-meta">
+                      {group.items.length} files • {formatFileSize(group.totalSize)}
+                    </span>
+                  </summary>
+                  <div className="fl-folder-table">
+                    <table className="fl-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>File</th>
+                          <th>POS</th>
+                          <th>Size</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((it: any) => (
+                          <tr key={it._id}>
+                            <td>
+                              <span className="fl-mono">…{String(it._id).slice(-8)}</span>
+                            </td>
+                            <td>
+                              <span className="fl-file-path" title={formatSourceFilePath(it.sourceFile || it.filename || it.url || '')}>
+                                {formatSourceFilePath(it.sourceFile || it.filename || it.url || '')}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="fl-mono">{it.pos != null ? String(it.pos) : '—'}</span>
+                            </td>
+                            <td>
+                              <span className="fl-mono">{formatFileSize(it.size)}</span>
+                            </td>
+                            <td>
+                              {it.status ? (
+                                <span className={`fl-status-badge ${getStatusClass(it.status)}`}>
+                                  {it.status}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td>
+                              <div className="fl-actions">
+                                <button className="fl-btn bg-sky-500 hover:bg-sky-600 text-white rounded-lg" onClick={() => viewRaw(it._id)} title="View raw">
+                                  <Icons.Code /> Raw
+                                </button>
+                                <button className="fl-btn bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg" onClick={() => viewRows(it._id)} title="Preview rows">
+                                  <Icons.Eye /> Preview
+                                </button>
+                                <button className="fl-btn bg-red-500 hover:bg-red-600 text-white rounded-lg" onClick={() => { setModalItem(it); setModalType('details'); setModalOpen(true); setPreviewRows([]) }} title="Details">
+                                  <Icons.Info /> Details
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ))}
+            </div>
           ) : (
             <table className="fl-table">
               <thead>

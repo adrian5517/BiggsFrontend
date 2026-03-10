@@ -15,6 +15,20 @@ type ProfileUser = {
   createdAt?: string;
   updatedAt?: string;
   address?: string;
+  managedBranches?: string[];
+  managed_branches?: string[];
+  branches?: string[];
+};
+
+type AdminUser = {
+  _id?: string;
+  id?: string;
+  username?: string;
+  email?: string;
+  role?: string;
+  managedBranches?: string[];
+  managed_branches?: string[];
+  branches?: string[];
 };
 
 function formatDate(value?: string) {
@@ -31,6 +45,16 @@ function roleClass(role: string) {
   return "bg-slate-100 text-slate-700 border border-slate-200";
 }
 
+function normalizeBranchList(value: any): string[] {
+  if (!value) return [];
+  const list = Array.isArray(value)
+    ? value
+    : String(value)
+        .split(",")
+        .map((item) => item.trim());
+  return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
 export default function UsersPage() {
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,6 +67,14 @@ export default function UsersPage() {
   const [passwordError, setPasswordError] = useState("");
   const [passwordNotice, setPasswordNotice] = useState("");
   const [notice, setNotice] = useState("");
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
+  const [selectedManagerId, setSelectedManagerId] = useState("");
+  const [managerBranchesInput, setManagerBranchesInput] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [adminNotice, setAdminNotice] = useState("");
+  const [adminError, setAdminError] = useState("");
 
   const loadProfile = async () => {
     setLoading(true);
@@ -207,13 +239,114 @@ export default function UsersPage() {
     }
   };
 
+  const loadAdminUsersAndBranches = async () => {
+    setAdminLoading(true);
+    setAdminError("");
+    try {
+      const [usersResp, branchesResp] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/api/auth/users`, { method: "GET" }),
+        fetchWithAuth(`${API_BASE}/api/fetch/branches`, { method: "GET" }),
+      ]);
+
+      const usersJson = await usersResp.json().catch(() => ({}));
+      const branchesJson = await branchesResp.json().catch(() => ({}));
+
+      if (!usersResp.ok) {
+        setAdminError(usersJson?.message || "Failed to load users.");
+        return;
+      }
+
+      const users = Array.isArray(usersJson?.users) ? usersJson.users : [];
+      const managers = users.filter((user: any) => String(user?.role || "").toLowerCase() === "manager");
+      setAdminUsers(managers);
+
+      const branches: string[] = Array.isArray(branchesJson?.branches)
+        ? branchesJson.branches.map((item: any) => String(item || "").trim()).filter(Boolean)
+        : [];
+      setBranchOptions(Array.from(new Set(branches)).sort());
+    } catch (error: any) {
+      setAdminError(error?.message || "Failed to load admin manager tools.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const handleSelectManager = (managerId: string) => {
+    setSelectedManagerId(managerId);
+    setAdminNotice("");
+    setAdminError("");
+    const manager = adminUsers.find((item) => String(item?._id || item?.id || "") === managerId);
+    const scopes = normalizeBranchList(
+      manager?.managedBranches && manager.managedBranches.length
+        ? manager.managedBranches
+        : (manager?.managed_branches && manager.managed_branches.length
+            ? manager.managed_branches
+            : manager?.branches)
+    );
+    setManagerBranchesInput(scopes.join(", "));
+  };
+
+  const toggleManagerBranch = (branch: string) => {
+    const current = normalizeBranchList(managerBranchesInput);
+    const hasBranch = current.includes(branch);
+    const next = hasBranch ? current.filter((item) => item !== branch) : [...current, branch];
+    setManagerBranchesInput(next.join(", "));
+  };
+
+  const handleSaveManagerBranches = async () => {
+    if (!selectedManagerId) {
+      setAdminError("Select a manager first.");
+      return;
+    }
+
+    setAdminSaving(true);
+    setAdminNotice("");
+    setAdminError("");
+
+    try {
+      const scopedBranches = normalizeBranchList(managerBranchesInput);
+      const resp = await fetchWithAuth(`${API_BASE}/api/auth/users/${encodeURIComponent(selectedManagerId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "manager", managedBranches: scopedBranches }),
+      });
+
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setAdminError(json?.message || "Failed to update manager branches.");
+        return;
+      }
+
+      setAdminNotice(json?.message || "Manager branch scope updated.");
+      await loadAdminUsersAndBranches();
+    } catch (error: any) {
+      setAdminError(error?.message || "Failed to update manager branches.");
+    } finally {
+      setAdminSaving(false);
+    }
+  };
+
   useEffect(() => {
     void loadProfile();
   }, []);
 
+  useEffect(() => {
+    const role = String(profile?.role || "").toLowerCase();
+    if (role === "admin") {
+      void loadAdminUsersAndBranches();
+    }
+  }, [profile?.role]);
+
   const name = String(profile?.username || "User");
   const email = String(profile?.email || "—");
   const role = String(profile?.role || "user");
+  const managedBranches = normalizeBranchList(
+    profile?.managedBranches && profile.managedBranches.length
+      ? profile.managedBranches
+      : (profile?.managed_branches && profile.managed_branches.length
+          ? profile.managed_branches
+          : profile?.branches)
+  );
   const avatarSeed = encodeURIComponent(name || email || "user");
   const avatar = profile?.profilePicture || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}`;
   const userId = String(profile?._id || profile?.id || "—");
@@ -298,6 +431,26 @@ export default function UsersPage() {
                 disabled={loading || saving}
               />
             </div>
+
+            {String(role).toLowerCase() === "manager" ? (
+              <div className="md:col-span-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Assigned Branches</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {managedBranches.length > 0 ? (
+                    managedBranches.map((branch) => (
+                      <span
+                        key={branch}
+                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200"
+                      >
+                        {branch}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-500">No branch scope assigned yet.</span>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -394,6 +547,100 @@ export default function UsersPage() {
           </button>
         </div>
       </div>
+
+      {String(profile?.role || "").toLowerCase() === "admin" ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Manager Branch Assignment</h3>
+              <p className="text-sm text-slate-600 mt-1">Assign branch scope to manager accounts.</p>
+            </div>
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+              Admin
+            </span>
+          </div>
+
+          {adminError ? (
+            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">{adminError}</div>
+          ) : null}
+          {adminNotice ? (
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm p-3">{adminNotice}</div>
+          ) : null}
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-500">Manager Account</label>
+              <select
+                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={selectedManagerId}
+                onChange={(e) => handleSelectManager(e.target.value)}
+                disabled={adminLoading || adminSaving}
+              >
+                <option value="">Select manager</option>
+                {adminUsers.map((user) => {
+                  const id = String(user?._id || user?.id || "");
+                  const label = `${user?.username || "unknown"} (${user?.email || "no-email"})`;
+                  return (
+                    <option key={id} value={id}>{label}</option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-500">Assigned Branches (comma separated)</label>
+              <input
+                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={managerBranchesInput}
+                onChange={(e) => setManagerBranchesInput(e.target.value)}
+                placeholder="AYALA-FRN, REPLAY-TEST"
+                disabled={adminLoading || adminSaving || !selectedManagerId}
+              />
+            </div>
+          </div>
+
+          {branchOptions.length > 0 ? (
+            <div className="mt-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Quick Select</div>
+              <div className="flex flex-wrap gap-2 max-h-44 overflow-auto pr-1">
+                {branchOptions.map((branch) => {
+                  const selected = normalizeBranchList(managerBranchesInput).includes(branch);
+                  return (
+                    <button
+                      key={branch}
+                      type="button"
+                      onClick={() => toggleManagerBranch(branch)}
+                      disabled={adminLoading || adminSaving || !selectedManagerId}
+                      className={`px-3 py-1.5 rounded-full text-xs border ${selected ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'} disabled:opacity-60`}
+                    >
+                      {branch}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleSaveManagerBranches()}
+              disabled={adminLoading || adminSaving || !selectedManagerId}
+              className="h-10 px-4 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-sm disabled:opacity-60"
+            >
+              {adminSaving ? "Saving..." : "Save Manager Scope"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadAdminUsersAndBranches()}
+              disabled={adminLoading || adminSaving}
+              className="h-10 px-4 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-60"
+            >
+              {adminLoading ? "Refreshing..." : "Reload"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

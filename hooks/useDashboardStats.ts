@@ -10,7 +10,7 @@ type Stats = {
   files?: number | null
 }
 
-export default function useDashboardStats(pollInterval = 10000) {
+export default function useDashboardStats(pollInterval = 10000, enabled = true) {
   const [stats, setStats] = useState<Stats>({ liveEvents: undefined, activeJobs: undefined, uploads: undefined, files: undefined })
   const [loading, setLoading] = useState(true)
   const [lastError, setLastError] = useState<string | null>(null)
@@ -69,11 +69,15 @@ export default function useDashboardStats(pollInterval = 10000) {
   }
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false)
+      return () => {}
+    }
     mounted.current = true
     fetchStats()
     const id = setInterval(fetchStats, pollInterval)
     return () => { mounted.current = false; clearInterval(id) }
-  }, [pollInterval])
+  }, [pollInterval, enabled])
 
   return { stats, loading, refresh: fetchStats, lastError }
 }
