@@ -26,6 +26,19 @@ type MissingScanRow = {
   failureByDate?: Record<string, string>;
 };
 
+type EditModalState = {
+  open: boolean;
+  branch: string;
+  pos: string | number;
+  date: string;
+  title: string;
+  color: string;
+  remarks: string;
+  loading: boolean;
+  error: string;
+  success: string;
+};
+
 const POS_OPTIONS = ["1", "2"];
 
 function formatDate(value?: string) {
@@ -159,6 +172,19 @@ function normalizeFileRecord(item: any): ReportItem {
   };
 }
 
+const EDIT_MODAL_DEFAULT: EditModalState = {
+  open: false,
+  branch: "",
+  pos: "",
+  date: "",
+  title: "",
+  color: "",
+  remarks: "",
+  loading: false,
+  error: "",
+  success: "",
+};
+
 export default function MyReportsPage() {
   const [items, setItems] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,12 +206,13 @@ export default function MyReportsPage() {
   const [missingRows, setMissingRows] = useState<MissingScanRow[]>([]);
   const [missingLoading, setMissingLoading] = useState(false);
   const [missingError, setMissingError] = useState("");
-  const [showMissingTable, setShowMissingTable] = useState(false);
-  const [showMissingMatrix, setShowMissingMatrix] = useState(false);
+  const [showMissingTable, setShowMissingTable] = useState(true);
+  const [showMissingMatrix, setShowMissingMatrix] = useState(true);
   const [missingRangeStart, setMissingRangeStart] = useState("");
   const [missingRangeEnd, setMissingRangeEnd] = useState("");
   const [missingLastLoadedAt, setMissingLastLoadedAt] = useState(0);
   const [missingLoadedScope, setMissingLoadedScope] = useState("");
+  const [editModal, setEditModal] = useState<EditModalState>(EDIT_MODAL_DEFAULT);
 
   const role = useMemo(() => {
     try {
@@ -194,6 +221,58 @@ export default function MyReportsPage() {
       return "";
     }
   }, []);
+
+  function openEditModal(branch?: string, pos?: string | number, date?: string) {
+    setEditModal({
+      ...EDIT_MODAL_DEFAULT,
+      open: true,
+      branch: String(branch || ""),
+      pos: pos ?? "",
+      date: String(date || ""),
+    });
+  }
+
+  function closeEditModal() {
+    setEditModal(EDIT_MODAL_DEFAULT);
+  }
+
+  async function saveEditModal() {
+    setEditModal((prev) => ({ ...prev, loading: true, error: "", success: "" }));
+    try {
+
+      const formData = new FormData();
+      formData.append('date', editModal.date);
+      formData.append('branch', editModal.branch);
+      formData.append('pos', String(editModal.pos));
+      formData.append('title', editModal.title);
+      formData.append('color', editModal.color);
+      formData.append('remarks', editModal.remarks);
+      // Add current time in HH:mm:ss format
+      const now = new Date();
+      const pad = (n) => n.toString().padStart(2, '0');
+      const timeString = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      formData.append('time', timeString);
+
+      const response = await fetch("https://biggsph.com/biggsinc_loyalty/controller/update_status.php", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        let payload = {};
+        try { payload = await response.json(); } catch {}
+        setEditModal((prev) => ({
+          ...prev,
+          loading: false,
+          error: payload?.message || "Failed to save status.",
+        }));
+        return;
+      }
+      setEditModal((prev) => ({ ...prev, loading: false, success: "Status saved successfully." }));
+      void loadMissingDates(true);
+    } catch (err: any) {
+      setEditModal((prev) => ({ ...prev, loading: false, error: err?.message || "Failed to save status." }));
+    }
+  }
 
   useEffect(() => {
     const loadAssignedBranches = async () => {
@@ -283,7 +362,7 @@ export default function MyReportsPage() {
 
           if (!resp.ok) {
             if (pageIndex === 1) {
-              setError(json?.message || "Failed to load sent reports.");
+              setError(json?.message || "Failed to load bookings.");
               setItems([]);
               return;
             }
@@ -305,7 +384,7 @@ export default function MyReportsPage() {
           : reportItems;
         setItems(dedupeReports(filteredItems));
       } catch (e: any) {
-        setError(e?.message || "Failed to load sent reports.");
+        setError(e?.message || "Failed to load bookings.");
         setItems([]);
       } finally {
         setLoading(false);
@@ -465,14 +544,14 @@ export default function MyReportsPage() {
         return;
       }
 
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      const firstRow = items[0] && typeof items[0] === "object" ? items[0] : null;
+      const rows = Array.isArray(payload?.items) ? payload.items : [];
+      const firstRow = rows[0] && typeof rows[0] === "object" ? rows[0] : null;
       const columns = firstRow ? Object.keys(firstRow) : [];
 
       setPreviewColumns(columns);
-      setPreviewRows(items);
-    } catch (error: any) {
-      setPreviewError(error?.message || "Failed to load file preview.");
+      setPreviewRows(rows);
+    } catch (err: any) {
+      setPreviewError(err?.message || "Failed to load file preview.");
     } finally {
       setPreviewLoading(false);
     }
@@ -599,8 +678,8 @@ export default function MyReportsPage() {
       setMissingRangeEnd(String(payload?.end || "").trim());
       setMissingLastLoadedAt(Date.now());
       setMissingLoadedScope(missingScopeKey);
-    } catch (error: any) {
-      setMissingError(error?.message || "Failed to load missing dates.");
+    } catch (err: any) {
+      setMissingError(err?.message || "Failed to load missing dates.");
       setMissingRows([]);
     } finally {
       setMissingLoading(false);
@@ -627,7 +706,7 @@ export default function MyReportsPage() {
   return (
     <main className="mx-auto w-full max-w-6xl p-6 md:p-8 space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold tracking-tight">My Sent Reports</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">My Bookings</h1>
         <p className="text-sm text-slate-600 mt-1">
           {role === "manager"
             ? "History of reports submitted within your assigned branch scope."
@@ -859,7 +938,12 @@ export default function MyReportsPage() {
                             {missingMatrixDates.map((date) => {
                               const label = normalizeStatusLabel(statusMap[date]);
                               return (
-                                <td key={`${rowIndex}-${date}`} className={`px-2 py-2 text-center text-[11px] font-semibold whitespace-nowrap ${statusToneClass(label)}`}>
+                                <td
+                                  key={`${rowIndex}-${date}`}
+                                  className={`px-2 py-2 text-center text-[11px] font-semibold whitespace-nowrap ${statusToneClass(label)} cursor-pointer`}
+                                  title="Click to edit status"
+                                  onClick={() => openEditModal(row.branch, row.pos, date)}
+                                >
                                   {label}
                                 </td>
                               );
@@ -875,6 +959,77 @@ export default function MyReportsPage() {
           </>
         ) : null}
       </div>
+
+      {/* Edit Modal for Matrix Status */}
+      {editModal.open && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-slate-500 hover:text-red-500"
+              onClick={closeEditModal}
+              disabled={editModal.loading}
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-semibold mb-2">
+              Edit Status for {editModal.branch} POS {editModal.pos} — {editModal.date}
+            </h2>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1">Title</label>
+              <input
+                type="text"
+                className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                value={editModal.title}
+                onChange={(e) => setEditModal((prev) => ({ ...prev, title: e.target.value }))}
+                disabled={editModal.loading}
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1">Color</label>
+              <select
+                className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                value={editModal.color}
+                onChange={(e) => setEditModal((prev) => ({ ...prev, color: e.target.value }))}
+                disabled={editModal.loading}
+              >
+                <option value="">Select color</option>
+                <option value="red">Red</option>
+                <option value="yellow">Yellow</option>
+                <option value="green">Green</option>
+                <option value="blue">Blue</option>
+              </select>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold mb-1">Remarks</label>
+              <textarea
+                className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                value={editModal.remarks}
+                onChange={(e) => setEditModal((prev) => ({ ...prev, remarks: e.target.value }))}
+                disabled={editModal.loading}
+                rows={2}
+              />
+            </div>
+            {editModal.error && <div className="text-red-600 text-xs mb-2">{editModal.error}</div>}
+            {editModal.success && <div className="text-green-600 text-xs mb-2">{editModal.success}</div>}
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-4 py-1 rounded bg-slate-200 text-slate-700 text-sm"
+                onClick={closeEditModal}
+                disabled={editModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-1 rounded bg-blue-600 text-white text-sm"
+                onClick={saveEditModal}
+                disabled={editModal.loading}
+              >
+                {editModal.loading ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         {loading ? (
@@ -902,7 +1057,7 @@ export default function MyReportsPage() {
                   {isOpen ? (
                     <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
                       <table className="w-full text-sm">
-                        <thead className="bg-sky-500 border-b border-slate-200 ">
+                        <thead className="bg-sky-500 border-b border-slate-200">
                           <tr>
                             <th className="px-3 py-2 text-left font-semibold text-gray-700">Source File</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-700">Branch</th>

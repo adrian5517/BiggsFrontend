@@ -1,8 +1,8 @@
 import UploadForm from './UploadForm';
 
-export const metadata = { title: 'Uploads' };
+export const metadata = { title: 'Booking' };
 
-export default function UploadsPage() {
+export default function BookingPage() {
   return (
     <main className="mx-auto w-full max-w-5xl p-6 md:p-8">
       <div className="mb-6 space-y-1">

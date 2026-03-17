@@ -1148,7 +1148,7 @@ export default function MissingScanClient() {
                 Pending Reports: {currentSummary.missingCount}
               </span>
               <span className="msc-chip chip-sky">Affected Store/POS: {currentSummary.pendingStorePosCount}</span>
-              <span className="msc-chip chip-date">Sent Reports Seen: {currentSummary.sentCount}</span>
+              <span className="msc-chip chip-date">Bookings Seen: {currentSummary.sentCount}</span>
               <span className="msc-chip chip-sky">Source: {scanResult?.sourceUsed || scanSource}</span>
             </div>
           )}
@@ -1370,8 +1370,8 @@ export default function MissingScanClient() {
                                     );
                                   })()}
                                 </td>
-                                <td style={{ padding: '8px 6px', minWidth: '240px' }}>
-                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                <td style={{ padding: '8px 6px', minWidth: '320px' }}>
+                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     <button
                                       className="msc-btn msc-btn-sky"
                                       style={{ padding: '4px 8px', fontSize: '10px' }}
@@ -1379,6 +1379,67 @@ export default function MissingScanClient() {
                                       disabled={queueing || !hasMissingDates}
                                     >
                                       Queue Fetch
+                                    </button>
+                                    {/* Edit controls for status */}
+                                    <input
+                                      type="text"
+                                      placeholder="Title"
+                                      value={r._editTitle || ''}
+                                      onChange={e => {
+                                        r._editTitle = e.target.value;
+                                        setScanResult({ ...scanResult });
+                                      }}
+                                      style={{ width: 70, fontSize: 10, padding: '2px 4px' }}
+                                    />
+                                    <select
+                                      value={r._editColor || ''}
+                                      onChange={e => {
+                                        r._editColor = e.target.value;
+                                        setScanResult({ ...scanResult });
+                                      }}
+                                      style={{ fontSize: 10, padding: '2px 4px' }}
+                                    >
+                                      <option value="">Color</option>
+                                      <option value="red">Red</option>
+                                      <option value="yellow">Yellow</option>
+                                      <option value="green">Green</option>
+                                      <option value="blue">Blue</option>
+                                    </select>
+                                    <input
+                                      type="text"
+                                      placeholder="Remarks"
+                                      value={r._editRemarks || ''}
+                                      onChange={e => {
+                                        r._editRemarks = e.target.value;
+                                        setScanResult({ ...scanResult });
+                                      }}
+                                      style={{ width: 90, fontSize: 10, padding: '2px 4px' }}
+                                    />
+                                    <button
+                                      className="msc-btn msc-btn-primary"
+                                      style={{ padding: '4px 8px', fontSize: '10px' }}
+                                      onClick={async () => {
+                                        const payload = {
+                                          branch: r.branch,
+                                          pos: r.pos,
+                                          title: r._editTitle || '',
+                                          color: r._editColor || '',
+                                          remarks: r._editRemarks || '',
+                                        };
+                                        try {
+                                          const resp = await fetch('https://biggsph.com/biggsinc_loyalty/controller/update_status.php', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(payload),
+                                          });
+                                          if (!resp.ok) throw new Error('Failed to update status');
+                                          toast.success('Status updated!');
+                                        } catch (e) {
+                                          toast.error('Failed to update status');
+                                        }
+                                      }}
+                                    >
+                                      Save
                                     </button>
                                   </div>
                                 </td>

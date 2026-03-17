@@ -226,12 +226,13 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
               Dashboard
             </NavItem>
 
-            <NavItem href="/uploads" collapsed={collapsed} icon={
+            <NavItem href="/booking" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M3 3h18M5 3v18a2 2 0 002 2h10a2 2 0 002-2V3M8 7h8M8 11h8M8 15h8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="12" cy="19" r="1.5" strokeWidth="2"/>
               </svg>
             }>
-              {isManager ? 'Send Reports' : 'Uploads'}
+              {isManager ? 'Booking' : 'Bookings'}
             </NavItem>
 
             {isManager && (
@@ -243,7 +244,7 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
                   <line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               }>
-                My Sent Reports
+                My Reports
               </NavItem>
             )}
 
