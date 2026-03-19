@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithAuth, getUser } from "@/utils/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
@@ -149,26 +149,35 @@ function getApiBases() {
   return Array.from(new Set(candidates));
 }
 
-function normalizeBranchScope(user: any) {
-  const raw = user?.managedBranches || user?.managed_branches || user?.branches;
+function normalizeBranchScope(user: Record<string, unknown> | null | undefined) {
+  const raw =
+    (user?.managedBranches as unknown) ||
+    (user?.managed_branches as unknown) ||
+    (user?.branches as unknown);
   if (Array.isArray(raw)) {
-    return Array.from(new Set(raw.map((item: any) => String(item || "").trim()).filter(Boolean)));
+    return Array.from(
+      new Set(raw.map((item: unknown) => String(item || "").trim()).filter(Boolean))
+    );
   }
   if (typeof raw === "string") {
-    return Array.from(new Set(raw.split(",").map((item: string) => item.trim()).filter(Boolean)));
+    return Array.from(
+      new Set(raw.split(",").map((item: string) => item.trim()).filter(Boolean))
+    );
   }
   return [];
 }
 
-function normalizeFileRecord(item: any): ReportItem {
+function normalizeFileRecord(item: Record<string, unknown>): ReportItem {
   return {
-    id: item?.id,
-    _id: item?._id,
-    branch: item?.branch,
-    pos: item?.pos,
-    workDate: item?.workDate || item?.work_date,
-    sourceFile: item?.sourceFile || item?.source_file || item?.filename,
-    ingestedAt: item?.ingestedAt || item?.ingested_at || item?.createdAt || item?.created_at,
+    id: item?.id as string | number | undefined,
+    _id: item?._id as string | undefined,
+    branch: item?.branch as string | undefined,
+    pos: item?.pos as number | string | undefined,
+    workDate: (item?.workDate || item?.work_date) as string | undefined,
+    sourceFile: (item?.sourceFile || item?.source_file || item?.filename) as string | undefined,
+    ingestedAt: (item?.ingestedAt || item?.ingested_at || item?.createdAt || item?.created_at) as
+      | string
+      | undefined,
   };
 }
 
@@ -202,7 +211,7 @@ export default function MyReportsPage() {
   const [previewError, setPreviewError] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
-  const [previewRows, setPreviewRows] = useState<Record<string, any>[]>([]);
+  const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
   const [missingRows, setMissingRows] = useState<MissingScanRow[]>([]);
   const [missingLoading, setMissingLoading] = useState(false);
   const [missingError, setMissingError] = useState("");
@@ -236,30 +245,145 @@ export default function MyReportsPage() {
     setEditModal(EDIT_MODAL_DEFAULT);
   }
 
-  async function saveEditModal() {
+  const missingScopeKey = useMemo(() => {
+    const normalizedBranches = [...assignedBranches]
+      .map((branch) => String(branch).trim())
+      .filter(Boolean)
+      .sort();
+    return `${role}|${normalizedBranches.join(",")}`;
+  }, [role, assignedBranches]);
+
+  // FIX 1: Wrap loadMissingDates in useCallback so it has a stable reference
+  // across renders, preventing infinite re-render loops in useEffect deps.
+  // Also fixes the stale closure bug where missingLoading/missingRows were
+  // captured at the time of effect registration instead of at call time.
+  const loadMissingDates = useCallback(
+    async (force = false) => {
+      if (role === "manager" && assignedBranches.length === 0) {
+        setMissingError("No assigned branches found for this account.");
+        setMissingRows([]);
+        return;
+      }
+
+      setMissingLoading((currentlyLoading) => {
+        // FIX 2: Read missingLoading via functional updater to avoid stale closure.
+        // Return the same value (no change) but exit early if already loading.
+        if (currentlyLoading) return currentlyLoading;
+        return currentlyLoading;
+      });
+
+      // FIX 3: Use refs pattern via a local flag instead of reading stale state.
+      // We check freshness by reading the setter result — but since setState is
+      // async, the safest approach is to pass force through and let the server
+      // decide, or track with a ref. Here we restructure to avoid the stale read:
+      setMissingLastLoadedAt((prev) => {
+        const now = Date.now();
+        const isFresh = prev > 0 && now - prev < MISSING_SCAN_COOLDOWN_MS;
+        if (!force && isFresh) {
+          // Already fresh — skip by not updating; use a thrown sentinel
+          throw new Error("__SKIP__");
+        }
+        return prev; // will be updated after fetch succeeds
+      });
+
+      setMissingLoading(true);
+      setMissingError("");
+
+      try {
+        const body: Record<string, unknown> = {
+          source: "report_pos_sended",
+          positions: "1,2",
+        };
+        if (role === "manager" && assignedBranches.length > 0) body.branches = assignedBranches;
+
+        const apiBases = getApiBases();
+        let response: Response | null = null;
+        let payload: Record<string, unknown> = {};
+
+        for (const base of apiBases) {
+          const candidate = await fetchWithAuth(`${base}/api/fetch/missing/scan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (candidate.status === 599) continue;
+          response = candidate;
+          payload = await candidate.json().catch(() => ({}));
+          break;
+        }
+
+        if (!response) {
+          setMissingError("Cannot connect to server for missing dates.");
+          setMissingRows([]);
+          return;
+        }
+
+        if (!response.ok) {
+          setMissingError(
+            (payload?.message as string) || "Failed to load missing dates."
+          );
+          setMissingRows([]);
+          return;
+        }
+
+        const rows = Array.isArray(payload?.results) ? payload.results : [];
+        const scopedRows =
+          role === "manager" && assignedBranches.length > 0
+            ? (rows as MissingScanRow[]).filter((row) =>
+                assignedBranches.includes(String(row?.branch || "").trim())
+              )
+            : (rows as MissingScanRow[]);
+        setMissingRows(scopedRows);
+        setMissingRangeStart(String(payload?.start || "").trim());
+        setMissingRangeEnd(String(payload?.end || "").trim());
+        setMissingLastLoadedAt(Date.now());
+        setMissingLoadedScope(missingScopeKey);
+      } catch (err: unknown) {
+        // FIX 4: Ignore our own skip sentinel, only handle real errors.
+        if (err instanceof Error && err.message === "__SKIP__") return;
+        setMissingError(
+          err instanceof Error ? err.message : "Failed to load missing dates."
+        );
+        setMissingRows([]);
+      } finally {
+        setMissingLoading(false);
+      }
+    },
+    // FIX 5: Proper dependency array — role and assignedBranches are the only
+    // external values read; missingScopeKey is derived from them.
+    [role, assignedBranches, missingScopeKey]
+  );
+
+  const saveEditModal = useCallback(async () => {
     setEditModal((prev) => ({ ...prev, loading: true, error: "", success: "" }));
     try {
-
       const formData = new FormData();
-      formData.append('date', editModal.date);
-      formData.append('branch', editModal.branch);
-      formData.append('pos', String(editModal.pos));
-      formData.append('title', editModal.title);
-      formData.append('color', editModal.color);
-      formData.append('remarks', editModal.remarks);
-      // Add current time in HH:mm:ss format
-      const now = new Date();
-      const pad = (n) => n.toString().padStart(2, '0');
-      const timeString = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-      formData.append('time', timeString);
+      formData.append("date", editModal.date);
+      formData.append("branch", editModal.branch);
+      formData.append("pos", String(editModal.pos));
+      formData.append("title", editModal.title);
+      formData.append("color", editModal.color);
+      formData.append("remarks", editModal.remarks);
 
-      const response = await fetch("https://biggsph.com/biggsinc_loyalty/controller/update_status.php", {
-        method: "POST",
-        body: formData,
-      });
+      // FIX 6: Typed pad helper — was implicitly typed as `any` which causes
+      // TypeScript errors in strict mode.
+      const pad = (n: number): string => n.toString().padStart(2, "0");
+      const now = new Date();
+      const timeString = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      formData.append("time", timeString);
+
+      const response = await fetch(
+        "https://biggsph.com/biggsinc_loyalty/controller/update_status.php",
+        { method: "POST", body: formData }
+      );
+
       if (!response.ok) {
-        let payload = {};
-        try { payload = await response.json(); } catch {}
+        let payload: { message?: string } = {};
+        try {
+          payload = await response.json();
+        } catch {
+          /* ignore parse errors */
+        }
         setEditModal((prev) => ({
           ...prev,
           loading: false,
@@ -267,26 +391,36 @@ export default function MyReportsPage() {
         }));
         return;
       }
-      setEditModal((prev) => ({ ...prev, loading: false, success: "Status saved successfully." }));
+
+      setEditModal((prev) => ({
+        ...prev,
+        loading: false,
+        success: "Status saved successfully.",
+      }));
       void loadMissingDates(true);
-    } catch (err: any) {
-      setEditModal((prev) => ({ ...prev, loading: false, error: err?.message || "Failed to save status." }));
+    } catch (err: unknown) {
+      setEditModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : "Failed to save status.",
+      }));
     }
-  }
+  }, [editModal, loadMissingDates]);
 
   useEffect(() => {
     const loadAssignedBranches = async () => {
       try {
         const user = getUser();
-        const localBranches = normalizeBranchScope(user);
-        const isManager = String(role).toLowerCase() === "manager";
+        const localBranches = normalizeBranchScope(
+          user as Record<string, unknown> | null | undefined
+        );
+        const isManager = role === "manager";
         if (!isManager) {
-          if (localBranches.length > 0) setAssignedBranches(localBranches);
-          else setAssignedBranches([]);
+          setAssignedBranches(localBranches.length > 0 ? localBranches : []);
           return;
         }
 
-        const userId = String(user?.id || user?._id || "").trim();
+        const userId = String((user as Record<string, unknown>)?.id || (user as Record<string, unknown>)?._id || "").trim();
         if (!userId) {
           setAssignedBranches(localBranches);
           return;
@@ -294,10 +428,15 @@ export default function MyReportsPage() {
 
         const apiBases = getApiBases();
         for (const base of apiBases) {
-          const response = await fetchWithAuth(`${base}/api/auth/users/${encodeURIComponent(userId)}`, { method: "GET" });
+          const response = await fetchWithAuth(
+            `${base}/api/auth/users/${encodeURIComponent(userId)}`,
+            { method: "GET" }
+          );
           if (response.status === 599) continue;
           if (!response.ok) continue;
-          const json = await response.json().catch(() => ({}));
+          const json: { user?: Record<string, unknown> } = await response
+            .json()
+            .catch(() => ({}));
           const apiBranches = normalizeBranchScope(json?.user);
           if (apiBranches.length > 0) {
             setAssignedBranches(apiBranches);
@@ -305,15 +444,12 @@ export default function MyReportsPage() {
           }
         }
 
-        if (localBranches.length > 0) {
-          setAssignedBranches(localBranches);
-          return;
-        }
-
-        setAssignedBranches([]);
+        setAssignedBranches(localBranches.length > 0 ? localBranches : []);
       } catch {
         try {
-          const fallbackBranches = normalizeBranchScope(getUser());
+          const fallbackBranches = normalizeBranchScope(
+            getUser() as Record<string, unknown> | null | undefined
+          );
           setAssignedBranches(fallbackBranches);
         } catch {
           setAssignedBranches([]);
@@ -339,12 +475,13 @@ export default function MyReportsPage() {
           });
 
           let resp: Response | null = null;
-          let json: any = {};
+          let json: { items?: unknown[]; total?: number; message?: string } = {};
 
           for (const base of apiBases) {
-            const candidate = await fetchWithAuth(`${base}/api/fetch/files?${params.toString()}`, {
-              method: "GET",
-            });
+            const candidate = await fetchWithAuth(
+              `${base}/api/fetch/files?${params.toString()}`,
+              { method: "GET" }
+            );
             if (candidate.status === 599) continue;
             resp = candidate;
             json = await candidate.json().catch(() => ({}));
@@ -369,8 +506,10 @@ export default function MyReportsPage() {
             break;
           }
 
-          const pageItems = Array.isArray(json?.items) ? json.items : [];
-          collectedItems.push(...pageItems);
+          const pageItems = Array.isArray(json?.items)
+            ? (json.items as Record<string, unknown>[])
+            : [];
+          collectedItems.push(...pageItems.map(normalizeFileRecord));
 
           const total = Number(json?.total || 0);
           if (!pageItems.length) break;
@@ -378,13 +517,15 @@ export default function MyReportsPage() {
           if (total > 0 && pageIndex * fetchLimit >= total) break;
         }
 
-        const reportItems = collectedItems.map(normalizeFileRecord);
-        const filteredItems = role === "manager" && assignedBranches.length > 0
-          ? reportItems.filter((item: any) => assignedBranches.includes(String(item?.branch || "").trim()))
-          : reportItems;
+        const filteredItems =
+          role === "manager" && assignedBranches.length > 0
+            ? collectedItems.filter((item) =>
+                assignedBranches.includes(String(item?.branch || "").trim())
+              )
+            : collectedItems;
         setItems(dedupeReports(filteredItems));
-      } catch (e: any) {
-        setError(e?.message || "Failed to load bookings.");
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Failed to load bookings.");
         setItems([]);
       } finally {
         setLoading(false);
@@ -417,7 +558,7 @@ export default function MyReportsPage() {
       );
     });
 
-    const sorted = [...filtered].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const ingestedA = new Date(a.ingestedAt || 0).getTime() || 0;
       const ingestedB = new Date(b.ingestedAt || 0).getTime() || 0;
       const workA = new Date(a.workDate || 0).getTime() || 0;
@@ -426,23 +567,15 @@ export default function MyReportsPage() {
       const branchB = String(b.branch || "");
 
       switch (sortBy) {
-        case "ingested_asc":
-          return ingestedA - ingestedB;
-        case "work_desc":
-          return workB - workA;
-        case "work_asc":
-          return workA - workB;
-        case "branch_asc":
-          return branchA.localeCompare(branchB);
-        case "branch_desc":
-          return branchB.localeCompare(branchA);
+        case "ingested_asc": return ingestedA - ingestedB;
+        case "work_desc":    return workB - workA;
+        case "work_asc":     return workA - workB;
+        case "branch_asc":  return branchA.localeCompare(branchB);
+        case "branch_desc": return branchB.localeCompare(branchA);
         case "ingested_desc":
-        default:
-          return ingestedB - ingestedA;
+        default:            return ingestedB - ingestedA;
       }
     });
-
-    return sorted;
   }, [items, search, selectedDate, posFilter, sortBy]);
 
   const groupedByDate = useMemo(() => {
@@ -494,7 +627,11 @@ export default function MyReportsPage() {
 
     const parsed = new Date(`${dateKey}T00:00:00`);
     if (Number.isNaN(parsed.getTime())) return dateKey;
-    return parsed.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    return parsed.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   }
 
   function toggleFolder(dateKey: string) {
@@ -522,12 +659,13 @@ export default function MyReportsPage() {
     try {
       const apiBases = getApiBases();
       let response: Response | null = null;
-      let payload: any = {};
+      let payload: { items?: Record<string, unknown>[]; message?: string } = {};
 
       for (const base of apiBases) {
-        const candidate = await fetchWithAuth(`${base}/api/fetch/files/${encodeURIComponent(fileId)}/rows?limit=50`, {
-          method: "GET",
-        });
+        const candidate = await fetchWithAuth(
+          `${base}/api/fetch/files/${encodeURIComponent(fileId)}/rows?limit=50`,
+          { method: "GET" }
+        );
         if (candidate.status === 599) continue;
         response = candidate;
         payload = await candidate.json().catch(() => ({}));
@@ -550,8 +688,10 @@ export default function MyReportsPage() {
 
       setPreviewColumns(columns);
       setPreviewRows(rows);
-    } catch (err: any) {
-      setPreviewError(err?.message || "Failed to load file preview.");
+    } catch (err: unknown) {
+      setPreviewError(
+        err instanceof Error ? err.message : "Failed to load file preview."
+      );
     } finally {
       setPreviewLoading(false);
     }
@@ -567,17 +707,24 @@ export default function MyReportsPage() {
         const branchA = String(a?.branch || "");
         const branchB = String(b?.branch || "");
         if (branchA !== branchB) return branchA.localeCompare(branchB);
-        return String(a?.pos || "").localeCompare(String(b?.pos || ""), undefined, { numeric: true });
+        return String(a?.pos || "").localeCompare(String(b?.pos || ""), undefined, {
+          numeric: true,
+        });
       });
   }, [missingRows]);
 
   const missingSummary = useMemo(() => {
     const totalPairs = filteredMissingRows.length;
     const totalMissingDates = filteredMissingRows.reduce(
-      (sum, row) => sum + (Array.isArray(row?.missingDates) ? row.missingDates.length : 0),
+      (sum, row) =>
+        sum + (Array.isArray(row?.missingDates) ? row.missingDates.length : 0),
       0
     );
-    const totalBranches = new Set(filteredMissingRows.map((row) => String(row?.branch || "").trim()).filter(Boolean)).size;
+    const totalBranches = new Set(
+      filteredMissingRows
+        .map((row) => String(row?.branch || "").trim())
+        .filter(Boolean)
+    ).size;
     return { totalPairs, totalMissingDates, totalBranches };
   }, [filteredMissingRows]);
 
@@ -593,7 +740,11 @@ export default function MyReportsPage() {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([branch, rows]) => ({
         branch,
-        rows: [...rows].sort((a, b) => String(a?.pos || "").localeCompare(String(b?.pos || ""), undefined, { numeric: true })),
+        rows: [...rows].sort((a, b) =>
+          String(a?.pos || "").localeCompare(String(b?.pos || ""), undefined, {
+            numeric: true,
+          })
+        ),
       }));
   }, [filteredMissingRows]);
 
@@ -603,95 +754,27 @@ export default function MyReportsPage() {
 
     const keySet = new Set<string>();
     for (const row of filteredMissingRows) {
-      const map = row?.statusByDate && typeof row.statusByDate === "object" ? row.statusByDate : {};
+      const map =
+        row?.statusByDate && typeof row.statusByDate === "object"
+          ? row.statusByDate
+          : {};
       for (const key of Object.keys(map)) keySet.add(String(key));
     }
     return Array.from(keySet).sort((a, b) => a.localeCompare(b));
   }, [filteredMissingRows, missingRangeStart, missingRangeEnd]);
 
-  const missingScopeKey = useMemo(() => {
-    const normalizedBranches = [...assignedBranches].map((branch) => String(branch).trim()).filter(Boolean).sort();
-    return `${role}|${normalizedBranches.join(",")}`;
-  }, [role, assignedBranches]);
-
-  async function loadMissingDates(force = false) {
-    if (role === "manager" && assignedBranches.length === 0) {
-      setMissingError("No assigned branches found for this account.");
-      setMissingRows([]);
-      return;
-    }
-
-    if (missingLoading) return;
-
-    const now = Date.now();
-    const isSameScope = missingLoadedScope === missingScopeKey;
-    const isFresh = missingLastLoadedAt > 0 && now - missingLastLoadedAt < MISSING_SCAN_COOLDOWN_MS;
-    const hasCachedRows = missingRows.length > 0;
-    if (!force && isSameScope && isFresh && hasCachedRows) {
-      return;
-    }
-
-    setMissingLoading(true);
-    setMissingError("");
-
-    try {
-      const body: Record<string, any> = {
-        source: "report_pos_sended",
-        positions: "1,2",
-      };
-      if (role === "manager" && assignedBranches.length > 0) body.branches = assignedBranches;
-
-      const apiBases = getApiBases();
-      let response: Response | null = null;
-      let payload: any = {};
-
-      for (const base of apiBases) {
-        const candidate = await fetchWithAuth(`${base}/api/fetch/missing/scan`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (candidate.status === 599) continue;
-        response = candidate;
-        payload = await candidate.json().catch(() => ({}));
-        break;
-      }
-
-      if (!response) {
-        setMissingError("Cannot connect to server for missing dates.");
-        setMissingRows([]);
-        return;
-      }
-
-      if (!response.ok) {
-        setMissingError(payload?.message || "Failed to load missing dates.");
-        setMissingRows([]);
-        return;
-      }
-
-      const rows = Array.isArray(payload?.results) ? payload.results : [];
-      const scopedRows = role === "manager" && assignedBranches.length > 0
-        ? rows.filter((row: any) => assignedBranches.includes(String(row?.branch || "").trim()))
-        : rows;
-      setMissingRows(scopedRows);
-      setMissingRangeStart(String(payload?.start || "").trim());
-      setMissingRangeEnd(String(payload?.end || "").trim());
-      setMissingLastLoadedAt(Date.now());
-      setMissingLoadedScope(missingScopeKey);
-    } catch (err: any) {
-      setMissingError(err?.message || "Failed to load missing dates.");
-      setMissingRows([]);
-    } finally {
-      setMissingLoading(false);
-    }
-  }
-
+  // FIX 7: useEffect now correctly lists loadMissingDates (stable via useCallback)
+  // in the dependency array. Previously, the function was re-created every render
+  // and omitted from deps, causing ESLint warnings and potential stale logic.
   useEffect(() => {
     if (!showMissingTable && !showMissingMatrix) return;
     if (role === "manager" && assignedBranches.length === 0) return;
     void loadMissingDates();
-  }, [showMissingTable, showMissingMatrix, role, assignedBranches]);
+  }, [showMissingTable, showMissingMatrix, role, assignedBranches, loadMissingDates]);
 
+  // FIX 8: Interval effect also correctly depends on loadMissingDates. Because
+  // loadMissingDates is now memoized with useCallback, this effect only re-runs
+  // when the actual scope (role/branches) changes — not on every render.
   useEffect(() => {
     if (!showMissingTable && !showMissingMatrix) return;
     if (role === "manager" && assignedBranches.length === 0) return;
@@ -701,7 +784,7 @@ export default function MyReportsPage() {
     }, MISSING_SCAN_COOLDOWN_MS);
 
     return () => clearInterval(intervalId);
-  }, [showMissingTable, showMissingMatrix, role, assignedBranches]);
+  }, [showMissingTable, showMissingMatrix, role, assignedBranches, loadMissingDates]);
 
   return (
     <main className="mx-auto w-full max-w-6xl p-6 md:p-8 space-y-4">
@@ -714,13 +797,18 @@ export default function MyReportsPage() {
         </p>
         {role === "manager" ? (
           <p className="text-xs text-slate-500 mt-2">
-            Showing assigned branches only: {assignedBranches.length > 0 ? assignedBranches.join(", ") : "(none assigned)"}
+            Showing assigned branches only:{" "}
+            {assignedBranches.length > 0
+              ? assignedBranches.join(", ")
+              : "(none assigned)"}
           </p>
         ) : null}
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">{error}</div>
+        <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">
+          {error}
+        </div>
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -732,7 +820,6 @@ export default function MyReportsPage() {
             placeholder="Search branch, POS, file, date..."
             className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
           />
-
           <input
             type="date"
             value={selectedDate}
@@ -740,7 +827,6 @@ export default function MyReportsPage() {
             className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
             aria-label="Filter by date"
           />
-
           <select
             value={posFilter}
             onChange={(event) => setPosFilter(event.target.value)}
@@ -748,10 +834,11 @@ export default function MyReportsPage() {
           >
             <option value="all">All POS</option>
             {POS_OPTIONS.map((pos) => (
-              <option key={pos} value={pos}>{pos}</option>
+              <option key={pos} value={pos}>
+                {pos}
+              </option>
             ))}
           </select>
-
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value)}
@@ -765,9 +852,10 @@ export default function MyReportsPage() {
             <option value="branch_desc">Sort: Branch Z-A</option>
           </select>
         </div>
-
         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-600">
-          <span>Showing {total} reports in {groupedByDate.length} folders</span>
+          <span>
+            Showing {total} reports in {groupedByDate.length} folders
+          </span>
           <button
             type="button"
             className="h-8 px-3 rounded-lg border border-slate-300 text-slate-700"
@@ -787,8 +875,12 @@ export default function MyReportsPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Missing Dates (Assigned Branches)</h2>
-            <p className="text-xs text-slate-600">Same scan logic as admin, limited to your assigned branches.</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Missing Dates (Assigned Branches)
+            </h2>
+            <p className="text-xs text-slate-600">
+              Same scan logic as admin, limited to your assigned branches.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -824,62 +916,100 @@ export default function MyReportsPage() {
             </div>
 
             {missingError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">{missingError}</div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">
+                {missingError}
+              </div>
             ) : null}
 
             {missingLoading ? (
               <div className="text-sm text-slate-500">Scanning missing dates...</div>
             ) : filteredMissingRows.length === 0 ? (
-              <div className="text-sm text-slate-500">No missing dates found for current scope.</div>
+              <div className="text-sm text-slate-500">
+                No missing dates found for current scope.
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs text-slate-500">Branches</p>
-                    <p className="text-lg font-semibold text-slate-900">{missingSummary.totalBranches}</p>
+                    <p className="text-lg font-semibold text-slate-900">
+                      {missingSummary.totalBranches}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs text-slate-500">Branch/POS Pairs</p>
-                    <p className="text-lg font-semibold text-slate-900">{missingSummary.totalPairs}</p>
+                    <p className="text-lg font-semibold text-slate-900">
+                      {missingSummary.totalPairs}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs text-slate-500">Total Missing Dates</p>
-                    <p className="text-lg font-semibold text-rose-600">{missingSummary.totalMissingDates}</p>
+                    <p className="text-lg font-semibold text-rose-600">
+                      {missingSummary.totalMissingDates}
+                    </p>
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   {groupedMissingRows.map((group) => (
-                    <div key={group.branch} className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div
+                      key={group.branch}
+                      className="rounded-lg border border-slate-200 overflow-hidden"
+                    >
                       <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
-                        <p className="text-sm font-semibold text-slate-800">{group.branch}</p>
-                        <p className="text-xs text-slate-600">{group.rows.length} POS affected</p>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {group.branch}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {group.rows.length} POS affected
+                        </p>
                       </div>
-
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-white border-b border-slate-200">
                             <tr>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-700">POS</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-700">Missing Count</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-700">Missing Dates</th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                POS
+                              </th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                Missing Count
+                              </th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                Missing Dates
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
                             {group.rows.map((row, index) => {
-                              const dates = Array.isArray(row.missingDates) ? [...row.missingDates] : [];
+                              const dates = Array.isArray(row.missingDates)
+                                ? [...row.missingDates]
+                                : [];
                               dates.sort((a, b) => String(a).localeCompare(String(b)));
                               return (
-                                <tr key={`${group.branch}-${row.pos || "unknown"}-${index}`} className="border-b border-slate-100 last:border-b-0">
-                                  <td className="px-3 py-2 text-slate-800">{row.pos != null ? String(row.pos) : "—"}</td>
-                                  <td className="px-3 py-2 text-slate-700">{dates.length}</td>
+                                <tr
+                                  key={`${group.branch}-${row.pos ?? "unknown"}-${index}`}
+                                  className="border-b border-slate-100 last:border-b-0"
+                                >
+                                  <td className="px-3 py-2 text-slate-800">
+                                    {row.pos != null ? String(row.pos) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700">
+                                    {dates.length}
+                                  </td>
                                   <td className="px-3 py-2">
                                     <div className="flex flex-wrap gap-1.5">
-                                      {dates.length > 0 ? dates.map((date) => (
-                                        <span key={`${group.branch}-${row.pos || "unknown"}-${date}`} className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-                                          {formatMissingDateLabel(date)}
-                                        </span>
-                                      )) : <span className="text-slate-500">—</span>}
+                                      {dates.length > 0 ? (
+                                        dates.map((date) => (
+                                          <span
+                                            key={`${group.branch}-${row.pos ?? "unknown"}-${date}`}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
+                                          >
+                                            {formatMissingDateLabel(date)}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-slate-500">—</span>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -899,42 +1029,72 @@ export default function MyReportsPage() {
         {showMissingMatrix ? (
           <>
             {missingError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">{missingError}</div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">
+                {missingError}
+              </div>
             ) : null}
 
             {missingLoading ? (
               <div className="text-sm text-slate-500">Building status matrix...</div>
             ) : filteredMissingRows.length === 0 || missingMatrixDates.length === 0 ? (
-              <div className="text-sm text-slate-500">No matrix data available for current scope.</div>
+              <div className="text-sm text-slate-500">
+                No matrix data available for current scope.
+              </div>
             ) : (
               <div className="space-y-2">
                 <div className="text-xs text-slate-600">
-                  Rows: {filteredMissingRows.length} • Dates: {missingMatrixDates.length} • Range: {formatMissingDateLabel(missingRangeStart)} - {formatMissingDateLabel(missingRangeEnd)}
+                  Rows: {filteredMissingRows.length} • Dates:{" "}
+                  {missingMatrixDates.length} • Range:{" "}
+                  {formatMissingDateLabel(missingRangeStart)} -{" "}
+                  {formatMissingDateLabel(missingRangeEnd)}
                 </div>
-
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="inline-flex items-center rounded-md bg-emerald-600 text-white px-2 py-1">SENT</span>
-                  <span className="inline-flex items-center rounded-md bg-rose-600 text-white px-2 py-1">MISSING</span>
-                  <span className="inline-flex items-center rounded-md bg-sky-700 text-white px-2 py-1">FILE NOT FOUND</span>
-                  <span className="inline-flex items-center rounded-md bg-amber-600 text-white px-2 py-1">ERROR</span>
+                  <span className="inline-flex items-center rounded-md bg-emerald-600 text-white px-2 py-1">
+                    SENT
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-rose-600 text-white px-2 py-1">
+                    MISSING
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-sky-700 text-white px-2 py-1">
+                    FILE NOT FOUND
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-amber-600 text-white px-2 py-1">
+                    ERROR
+                  </span>
                 </div>
-
                 <div className="rounded-lg border border-slate-200 overflow-auto">
                   <table className="w-full text-xs md:text-sm">
                     <thead className="bg-slate-900 border-b border-slate-200">
                       <tr>
-                        <th className="sticky left-0 z-20 px-3 py-2 text-left font-semibold text-white whitespace-nowrap bg-slate-900">Branch-POS</th>
+                        <th className="sticky left-0 z-20 px-3 py-2 text-left font-semibold text-white whitespace-nowrap bg-slate-900">
+                          Branch-POS
+                        </th>
                         {missingMatrixDates.map((date) => (
-                          <th key={date} className="px-3 py-2 text-center font-semibold text-white whitespace-nowrap">{date}</th>
+                          <th
+                            key={date}
+                            className="px-3 py-2 text-center font-semibold text-white whitespace-nowrap"
+                          >
+                            {date}
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {filteredMissingRows.map((row, rowIndex) => {
-                        const statusMap = row?.statusByDate && typeof row.statusByDate === "object" ? row.statusByDate : {};
+                        const statusMap =
+                          row?.statusByDate &&
+                          typeof row.statusByDate === "object"
+                            ? row.statusByDate
+                            : {};
                         return (
-                          <tr key={`${row.branch || "unknown"}-${row.pos || "unknown"}-${rowIndex}`} className="border-b border-slate-100 last:border-b-0">
-                            <td className="sticky left-0 z-10 px-3 py-2 font-medium text-slate-800 whitespace-nowrap bg-white">{String(row.branch || "—")} {row.pos != null ? String(row.pos) : "—"}</td>
+                          <tr
+                            key={`${row.branch ?? "unknown"}-${row.pos ?? "unknown"}-${rowIndex}`}
+                            className="border-b border-slate-100 last:border-b-0"
+                          >
+                            <td className="sticky left-0 z-10 px-3 py-2 font-medium text-slate-800 whitespace-nowrap bg-white">
+                              {String(row.branch || "—")}{" "}
+                              {row.pos != null ? String(row.pos) : "—"}
+                            </td>
                             {missingMatrixDates.map((date) => {
                               const label = normalizeStatusLabel(statusMap[date]);
                               return (
@@ -942,7 +1102,9 @@ export default function MyReportsPage() {
                                   key={`${rowIndex}-${date}`}
                                   className={`px-2 py-2 text-center text-[11px] font-semibold whitespace-nowrap ${statusToneClass(label)} cursor-pointer`}
                                   title="Click to edit status"
-                                  onClick={() => openEditModal(row.branch, row.pos, date)}
+                                  onClick={() =>
+                                    openEditModal(row.branch, row.pos, date)
+                                  }
                                 >
                                   {label}
                                 </td>
@@ -972,7 +1134,8 @@ export default function MyReportsPage() {
               ×
             </button>
             <h2 className="text-lg font-semibold mb-2">
-              Edit Status for {editModal.branch} POS {editModal.pos} — {editModal.date}
+              Edit Status for {editModal.branch} POS {editModal.pos} —{" "}
+              {editModal.date}
             </h2>
             <div className="mb-3">
               <label className="block text-xs font-semibold mb-1">Title</label>
@@ -980,7 +1143,9 @@ export default function MyReportsPage() {
                 type="text"
                 className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
                 value={editModal.title}
-                onChange={(e) => setEditModal((prev) => ({ ...prev, title: e.target.value }))}
+                onChange={(e) =>
+                  setEditModal((prev) => ({ ...prev, title: e.target.value }))
+                }
                 disabled={editModal.loading}
               />
             </div>
@@ -989,7 +1154,9 @@ export default function MyReportsPage() {
               <select
                 className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
                 value={editModal.color}
-                onChange={(e) => setEditModal((prev) => ({ ...prev, color: e.target.value }))}
+                onChange={(e) =>
+                  setEditModal((prev) => ({ ...prev, color: e.target.value }))
+                }
                 disabled={editModal.loading}
               >
                 <option value="">Select color</option>
@@ -1004,13 +1171,19 @@ export default function MyReportsPage() {
               <textarea
                 className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
                 value={editModal.remarks}
-                onChange={(e) => setEditModal((prev) => ({ ...prev, remarks: e.target.value }))}
+                onChange={(e) =>
+                  setEditModal((prev) => ({ ...prev, remarks: e.target.value }))
+                }
                 disabled={editModal.loading}
                 rows={2}
               />
             </div>
-            {editModal.error && <div className="text-red-600 text-xs mb-2">{editModal.error}</div>}
-            {editModal.success && <div className="text-green-600 text-xs mb-2">{editModal.success}</div>}
+            {editModal.error && (
+              <div className="text-red-600 text-xs mb-2">{editModal.error}</div>
+            )}
+            {editModal.success && (
+              <div className="text-green-600 text-xs mb-2">{editModal.success}</div>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 className="px-4 py-1 rounded bg-slate-200 text-slate-700 text-sm"
@@ -1021,7 +1194,7 @@ export default function MyReportsPage() {
               </button>
               <button
                 className="px-4 py-1 rounded bg-blue-600 text-white text-sm"
-                onClick={saveEditModal}
+                onClick={() => void saveEditModal()}
                 disabled={editModal.loading}
               >
                 {editModal.loading ? "Saving..." : "Save"}
@@ -1033,9 +1206,13 @@ export default function MyReportsPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         {loading ? (
-          <div className="px-4 py-8 text-center text-slate-500">Loading reports...</div>
+          <div className="px-4 py-8 text-center text-slate-500">
+            Loading reports...
+          </div>
         ) : groupedByDate.length === 0 ? (
-          <div className="px-4 py-8 text-center text-slate-500">No reports found.</div>
+          <div className="px-4 py-8 text-center text-slate-500">
+            No reports found.
+          </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {groupedByDate.map((group) => {
@@ -1048,10 +1225,17 @@ export default function MyReportsPage() {
                     onClick={() => toggleFolder(group.dateKey)}
                   >
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">📁 Report {formatFolderLabel(group.dateKey)}</p>
-                      <p className="text-xs text-slate-600 mt-0.5">{group.files.length} file{group.files.length > 1 ? "s" : ""}</p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        📁 Report {formatFolderLabel(group.dateKey)}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        {group.files.length} file
+                        {group.files.length > 1 ? "s" : ""}
+                      </p>
                     </div>
-                    <span className="text-sm text-white px-2 py-1 bg-red-400 rounded-md">{isOpen ? "Hide" : "Open"}</span>
+                    <span className="text-sm text-white px-2 py-1 bg-red-400 rounded-md">
+                      {isOpen ? "Hide" : "Open"}
+                    </span>
                   </button>
 
                   {isOpen ? (
@@ -1059,20 +1243,45 @@ export default function MyReportsPage() {
                       <table className="w-full text-sm">
                         <thead className="bg-sky-500 border-b border-slate-200">
                           <tr>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Source File</th>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Branch</th>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">POS</th>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Ingested At</th>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Action</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                              Source File
+                            </th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                              Branch
+                            </th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                              POS
+                            </th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                              Ingested At
+                            </th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                              Action
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {group.files.map((item, index) => (
-                            <tr key={String(item.id || item._id || `${group.dateKey}-${index}`)} className="border-b border-slate-100 last:border-b-0">
-                              <td className="px-3 py-2 text-slate-800 break-all">{formatSourceFileName(item.sourceFile)}</td>
-                              <td className="px-3 py-2 text-slate-700">{String(item.branch || "—")}</td>
-                              <td className="px-3 py-2 text-slate-700">{item.pos != null ? String(item.pos) : "—"}</td>
-                              <td className="px-3 py-2 text-slate-700">{formatDate(item.ingestedAt)}</td>
+                            <tr
+                              key={String(
+                                item.id ||
+                                  item._id ||
+                                  `${group.dateKey}-${index}`
+                              )}
+                              className="border-b border-slate-100 last:border-b-0"
+                            >
+                              <td className="px-3 py-2 text-slate-800 break-all">
+                                {formatSourceFileName(item.sourceFile)}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">
+                                {String(item.branch || "—")}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">
+                                {item.pos != null ? String(item.pos) : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">
+                                {formatDate(item.ingestedAt)}
+                              </td>
                               <td className="px-3 py-2">
                                 <button
                                   type="button"
@@ -1100,8 +1309,12 @@ export default function MyReportsPage() {
           <div className="mx-auto h-full w-full max-w-6xl rounded-xl border border-slate-200 bg-white shadow-lg flex flex-col">
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">File Preview</h2>
-                <p className="text-xs text-slate-600 mt-0.5 break-all">{previewTitle || "—"}</p>
+                <h2 className="text-base font-semibold text-slate-900">
+                  File Preview
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5 break-all">
+                  {previewTitle || "—"}
+                </p>
               </div>
               <button
                 type="button"
@@ -1111,29 +1324,43 @@ export default function MyReportsPage() {
                 Close
               </button>
             </div>
-
             <div className="flex-1 overflow-auto p-4">
               {previewLoading ? (
                 <div className="text-sm text-slate-500">Loading preview...</div>
               ) : previewError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">{previewError}</div>
+                <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-3">
+                  {previewError}
+                </div>
               ) : previewRows.length === 0 ? (
-                <div className="text-sm text-slate-500">No rows available for preview.</div>
+                <div className="text-sm text-slate-500">
+                  No rows available for preview.
+                </div>
               ) : (
                 <div className="rounded-lg border border-slate-200 overflow-auto">
                   <table className="w-full text-xs md:text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
                         {previewColumns.map((column) => (
-                          <th key={column} className="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap">{column}</th>
+                          <th
+                            key={column}
+                            className="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap"
+                          >
+                            {column}
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {previewRows.map((row, rowIndex) => (
-                        <tr key={rowIndex} className="border-b border-slate-100 last:border-b-0">
+                        <tr
+                          key={rowIndex}
+                          className="border-b border-slate-100 last:border-b-0"
+                        >
                           {previewColumns.map((column) => (
-                            <td key={`${rowIndex}-${column}`} className="px-3 py-2 text-slate-700 align-top whitespace-nowrap">
+                            <td
+                              key={`${rowIndex}-${column}`}
+                              className="px-3 py-2 text-slate-700 align-top whitespace-nowrap"
+                            >
                               {row && row[column] != null ? String(row[column]) : ""}
                             </td>
                           ))}

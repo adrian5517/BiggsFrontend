@@ -251,6 +251,7 @@ function DashboardContent() {
 
   /* ── State ── */
   const [managerBranches,           setManagerBranches]           = useState<string[]>([]);
+  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
   const [managerLoading,            setManagerLoading]            = useState(false);
   const [managerMissingCount,       setManagerMissingCount]       = useState<number | null>(null);
   const [managerMissingDates,       setManagerMissingDates]       = useState<Record<string, string[]>>({});
@@ -262,37 +263,63 @@ function DashboardContent() {
   const [managerTopProductsByPeriod, setManagerTopProductsByPeriod] = useState<Record<TopSellingPeriod, TopSellingItem[]>>({ daily:[], weekly:[], monthly:[] });
   const [managerTopTrendByPeriod,   setManagerTopTrendByPeriod]   = useState<Record<TopSellingPeriod, TopSellingTrendPoint[]>>({ daily:[], weekly:[], monthly:[] });
 
-  /* ── Load branches ── */
+  /* ── Load branches and branch map ── */
   useEffect(() => {
-    if (!isManager) { setManagerBranches([]); return; }
+    if (!isManager) { setManagerBranches([]); setBranchMap({}); return; }
     const load = async () => {
       try {
+        // 1. Fetch branch list for mapping
+        let branchMapData: Record<string, string> = {};
+        const bases = getApiBases();
+        for (const base of bases) {
+          const res = await fetchWithAuth(`${base}/api/booking/public/branches`, { method: "GET" });
+          if (!res.ok) continue;
+          const json = await res.json().catch(() => ({}));
+          // Try to support both array and object response
+          if (Array.isArray(json?.branches)) {
+            for (const b of json.branches) {
+              if (b && b.id && (b.code || b.branch_code || b.name)) {
+                branchMapData[String(b.id)] = String(b.code || b.branch_code || b.name);
+              }
+            }
+          } else if (Array.isArray(json)) {
+            for (const b of json) {
+              if (b && b.id && (b.code || b.branch_code || b.name)) {
+                branchMapData[String(b.id)] = String(b.code || b.branch_code || b.name);
+              }
+            }
+          }
+          break;
+        }
+        setBranchMap(branchMapData);
+
+        // 2. Fetch manager branches as before
         const user = getUser();
         const local = normalizeBranchScope(user);
         const userId = String(user?.id || user?._id || "").trim();
         if (!userId) { setManagerBranches(local); return; }
-        const bases = getApiBases();
         for (const base of bases) {
-          const res = await fetchWithAuth(`${base}/api/auth/users/${encodeURIComponent(userId)}`, { method:"GET" });
+          const res = await fetchWithAuth(`${base}/api/auth/users/${encodeURIComponent(userId)}`, { method: "GET" });
           if (!res.ok) continue;
-          const json = await res.json().catch(()=>({}));
+          const json = await res.json().catch(() => ({}));
           setManagerBranches(normalizeBranchScope(json?.user)); return;
         }
         for (const base of bases) {
-          const res = await fetchWithAuth(`${base}/api/auth/users`, { method:"GET" });
+          const res = await fetchWithAuth(`${base}/api/auth/users`, { method: "GET" });
           if (!res.ok) continue;
-          const json = await res.json().catch(()=>({}));
-          const users: Record<string,unknown>[] = Array.isArray(json?.users) ? json.users : [];
+          const json = await res.json().catch(() => ({}));
+          const users: Record<string, unknown>[] = Array.isArray(json?.users) ? json.users : [];
           const match = users.find(u =>
-            String(u?.id||u?._id||"") === userId ||
-            String(u?.email||"").toLowerCase() === String(user?.email||"").toLowerCase() ||
-            String(u?.username||"").toLowerCase() === String(user?.username||"").toLowerCase()
+            String(u?.id || u?._id || "") === userId ||
+            String(u?.email || "").toLowerCase() === String(user?.email || "").toLowerCase() ||
+            String(u?.username || "").toLowerCase() === String(user?.username || "").toLowerCase()
           );
           if (match) { setManagerBranches(normalizeBranchScope(match)); return; }
         }
         setManagerBranches(local);
       } catch {
         try { setManagerBranches(normalizeBranchScope(getUser())); } catch { setManagerBranches([]); }
+        setBranchMap({});
       }
     };
     void load();
@@ -311,14 +338,15 @@ function DashboardContent() {
     const load = async () => {
       setManagerLoading(true);
       try {
-        const branches = managerBranches;
-        if (branches.length === 0) { setManagerMissingCount(0); setManagerSentCount(0); return; }
+        // Use branch IDs for API calls (managerBranches are IDs)
+        const branchIds = managerBranches;
+        if (branchIds.length === 0) { setManagerMissingCount(0); setManagerSentCount(0); return; }
         const bases = getApiBases();
 
         /* files */
         let files: Record<string,unknown>[] = [];
         for (let page=1; page<=4; page++) {
-          const params = new URLSearchParams({ page:String(page), limit:"250" });
+          const params = new URLSearchParams({ page:String(page), limit:"250", branch: branchIds.join(",") });
           let payload: Record<string,unknown> = {};
           for (const base of bases) {
             const res = await fetchWithAuth(`${base}/api/fetch/files?${params}`, { method:"GET" });
@@ -346,15 +374,16 @@ function DashboardContent() {
         for (const base of bases) {
           const res = await fetchWithAuth(`${base}/api/fetch/missing/scan`, {
             method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({ source:"report_pos_sended", positions:"1,2", branches }),
+            body: JSON.stringify({ source:"report_pos_sended", positions:"1,2", branches: branchIds }),
           });
           if (!res.ok) continue;
           const payload = await res.json().catch(()=>({}));
           const rows = Array.isArray(payload?.results) ? payload.results as Record<string,unknown>[] : [];
           missingCount = rows.reduce((s,r) => s + (Array.isArray(r?.missingDates) ? (r.missingDates as unknown[]).length : 0), 0);
           rows.forEach(r => {
-            const b = String(r?.branch||r?.branchName||r?.branch_name||"Unknown");
-            missingByBranch[b] = Array.isArray(r?.missingDates) ? r.missingDates as string[] : [];
+            // Try to map branch ID to code for display
+            const branchId = String(r?.branchId || r?.branch_id || r?.branch || r?.branchName || r?.branch_name || "Unknown");
+            missingByBranch[branchMap[branchId] || branchId] = Array.isArray(r?.missingDates) ? r.missingDates as string[] : [];
           });
           break;
         }
@@ -382,9 +411,9 @@ function DashboardContent() {
           "soup","burgers and sandwiches","pasta dishes",
         ];
 
-        for (const branch of branches) {
+        for (const branchId of branchIds) {
           for (let page=1; page<=2; page++) {
-            const params = new URLSearchParams({ page:String(page), limit:"500", branch, sortBy:"DATE", sortDir:"desc" });
+            const params = new URLSearchParams({ page:String(page), limit:"500", branch: branchId, sortBy:"DATE", sortDir:"desc" });
             let pageRows: Record<string,unknown>[] = [];
             let loaded = false;
             for (const base of bases) {
@@ -690,7 +719,7 @@ function DashboardContent() {
                 <div style={{ marginTop:"10px", display:"flex", flexWrap:"wrap", gap:"8px" }}>
                   {managerBranches.length>0 ? managerBranches.map(b => (
                     <span key={b} style={{ padding:"4px 12px", borderRadius:"2px", border:"1px solid var(--border-md)", background:"var(--surface-2)", fontSize:"12px", fontFamily:"var(--font-mono)", color:"var(--sky)", letterSpacing:"0.05em" }}>
-                      {b}
+                      {branchMap[b] || b}
                     </span>
                   )) : (
                     <span style={{ fontSize:"12px", color:"var(--text-muted)", fontFamily:"var(--font-mono)" }}>No branch scope assigned.</span>

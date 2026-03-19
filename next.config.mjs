@@ -33,6 +33,14 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+    async rewrites() {
+      return [
+        {
+          source: '/api/booking/:path*',
+          destination: 'http://localhost:5000/api/booking/:path*',
+        },
+      ];
+    },
   poweredByHeader: false,
   reactStrictMode: true,
   productionBrowserSourceMaps: false,

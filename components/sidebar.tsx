@@ -218,6 +218,18 @@ export default function Sidebar({ mobile, mobileOpen, onClose, collapsed: collap
 
           {/* Navigation */}
           <nav className={`space-y-2 ${collapsed && !isMobile ? 'px-1' : ''}`}>
+            {isManager && (
+              <NavItem href="/manager/bookings" collapsed={collapsed} icon={
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+                  <rect x="3" y="7" width="18" height="13" rx="2" strokeWidth="2"/>
+                  <path d="M16 3v4M8 3v4M3 11h18" strokeWidth="2" strokeLinecap="round"/>
+                  <circle cx="8" cy="15" r="1.5" strokeWidth="2"/>
+                  <circle cx="16" cy="15" r="1.5" strokeWidth="2"/>
+                </svg>
+              }>
+                Branch Bookings
+              </NavItem>
+            )}
             <NavItem href="/dashboard" collapsed={collapsed} icon={
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
                 <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zM13 21h8V11h-8v10zM13 3v6h8V3h-8z"/>
