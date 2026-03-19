@@ -278,14 +278,14 @@ function DashboardContent() {
           // Try to support both array and object response
           if (Array.isArray(json?.branches)) {
             for (const b of json.branches) {
-              if (b && b.id && (b.code || b.branch_code || b.name)) {
-                branchMapData[String(b.id)] = String(b.code || b.branch_code || b.name);
+              if (b && b.alias && b.title) {
+                branchMapData[String(b.alias)] = String(b.title);
               }
             }
           } else if (Array.isArray(json)) {
             for (const b of json) {
-              if (b && b.id && (b.code || b.branch_code || b.name)) {
-                branchMapData[String(b.id)] = String(b.code || b.branch_code || b.name);
+              if (b && b.alias && b.title) {
+                branchMapData[String(b.alias)] = String(b.title);
               }
             }
           }
@@ -628,7 +628,7 @@ function DashboardContent() {
                 <div className={styles.managerKpiCard}>
                   <div className={styles.managerKpiLabel}>Your Branch</div>
                   <div className={`${styles.managerKpiValue} ${styles.kpiBlue}`} style={{ fontSize:"20px", lineHeight:1.3, whiteSpace:"normal", wordBreak:"break-word" }}>
-                    {managerBranches.length>0 ? managerBranches.join(", ") : "—"}
+                    {managerBranches.length>0 ? managerBranches.map(b => branchMap[b] || b).join(", ") : "—"}
                   </div>
                   <div className={styles.managerKpiSub}>Branch assigned to your account</div>
                 </div>
