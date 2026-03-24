@@ -39,6 +39,27 @@ const nextConfig = {
           source: '/api/booking/:path*',
           destination: 'http://localhost:5000/api/booking/:path*',
         },
+        {
+          source: '/api/notifications/:path*',
+          destination: 'http://localhost:5000/api/notifications/:path*',
+        },
+        {
+          source: '/api/notifications',
+          destination: 'http://localhost:5000/api/notifications',
+        },
+        {
+          source: '/api/fetch/:path*',
+          destination: 'http://localhost:5000/api/fetch/:path*',
+        },
+        {
+          source: '/api/fetch',
+          destination: 'http://localhost:5000/api/fetch',
+        },
+        // SSE /api/auth/notifications/stream rewrite removed for Socket.IO migration.
+        {
+          source: '/api/auth/notifications/:path*',
+          destination: 'http://localhost:5000/api/auth/notifications/:path*',
+        },
       ];
     },
   poweredByHeader: false,

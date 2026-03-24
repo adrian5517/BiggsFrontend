@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useMissingToast } from "../context/MissingToastContext";
 import { useRouter } from "next/navigation";
 import auth from "@/utils/auth";
 import { fetchWithAuth, getUser } from "@/utils/auth";
@@ -10,8 +11,7 @@ import MissingScanClient from "@/components/missing-scan-client";
 import CombineClient from "@/components/combine-client";
 import AdminRetentionPanel from "@/components/AdminRetentionPanel";
 import useDashboardStats from "@/hooks/useDashboardStats";
-import { toast } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster";
+import { toast } from "sonner";
 import styles from "./dashboard.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
@@ -259,7 +259,9 @@ function DashboardContent() {
   const [managerLatestWorkDate,     setManagerLatestWorkDate]     = useState<string>("");
   const [managerTopSalesDate,       setManagerTopSalesDate]       = useState<string>("");
   const [salesRows,                 setSalesRows]                 = useState<SalesRow[]>([]);
-  const [soundEnabled,              setSoundEnabled]              = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const { showMissingToast, triggerMissingToast, hideMissingToast } = useMissingToast();
+  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [managerTopProductsByPeriod, setManagerTopProductsByPeriod] = useState<Record<TopSellingPeriod, TopSellingItem[]>>({ daily:[], weekly:[], monthly:[] });
   const [managerTopTrendByPeriod,   setManagerTopTrendByPeriod]   = useState<Record<TopSellingPeriod, TopSellingTrendPoint[]>>({ daily:[], weekly:[], monthly:[] });
 
@@ -442,9 +444,27 @@ function DashboardContent() {
               if (excludeKw.some(kw=>ln.includes(kw)||ld.includes(kw))) continue;
               if (ln==="unknown"||ln==="guest count"||ln==="representation") continue;
               if (quantity<1||quantity>50) console.warn(`Suspicious qty — ${itemCode} qty:${quantity} date:${dailyKey}`);
-              const key=`${itemCode}|${dailyKey}`;
-              if (!productMap.has(key)) productMap.set(key,{name,itemCode,amount,quantity,ms,dailyKey,dailyLabel,weekKey,weekLabel});
-              else { const p=productMap.get(key)!; p.amount+=amount; p.quantity+=quantity; }
+              // Group by itemCode, dailyKey, and POS
+              const pos = String(row?.POS || row?.pos || '').trim();
+              const key = `${itemCode}|${dailyKey}|${pos}`;
+              if (!productMap.has(key)) {
+                productMap.set(key, {
+                  name,
+                  itemCode,
+                  amount,
+                  quantity,
+                  ms,
+                  dailyKey,
+                  dailyLabel,
+                  weekKey,
+                  weekLabel,
+                  pos
+                });
+              } else {
+                const p = productMap.get(key)!;
+                p.amount += amount;
+                p.quantity += quantity;
+              }
             }
             allRows.push(...Array.from(productMap.values()));
             if (pageRows.length<500) break;
@@ -461,9 +481,23 @@ function DashboardContent() {
         const dayMs=24*60*60*1000, baseDayDate=parseRowDateValue(baseDayKey);
         const baseDayMs=baseDayDate?baseDayDate.getTime():0;
         const trendStartMs=baseDayMs>0?baseDayMs-6*dayMs:0;
+
+        // Aggregate sales by date (all POS combined) for the trend chart
+        const trendByDate = new Map<string, { label: string, amount: number }>();
         for (const row of allRows) {
-          if (baseDayKey && row.dailyKey===baseDayKey) addP("monthly",row.name,row.amount,row.quantity);
-          if (baseDayMs>0&&row.ms>=trendStartMs&&row.ms<=baseDayMs) addT("monthly",row.dailyKey,row.dailyLabel,row.amount);
+          // For product list, keep as is
+          if (baseDayKey && row.dailyKey === baseDayKey) addP("monthly", row.name, row.amount, row.quantity);
+          // For trend, sum all POS for each date
+          if (baseDayMs > 0 && row.ms >= trendStartMs && row.ms <= baseDayMs) {
+            if (!trendByDate.has(row.dailyKey)) {
+              trendByDate.set(row.dailyKey, { label: row.dailyLabel, amount: 0 });
+            }
+            trendByDate.get(row.dailyKey)!.amount += row.amount;
+          }
+        }
+        // Add to trend map
+        for (const [dailyKey, { label, amount }] of trendByDate.entries()) {
+          addT("monthly", dailyKey, label, amount);
         }
 
         const topList = (m: Map<string,TopSellingItem>) => Array.from(m.values()).sort((a,b)=>b.amount-a.amount).slice(0,5);
@@ -483,46 +517,51 @@ function DashboardContent() {
 
   /* ── Error toast ── */
   useEffect(() => {
-    if (lastError) toast({ title:"Dashboard Error", description:String(lastError), variant:"destructive", duration:8000 });
+    if (lastError) toast.error(`Dashboard Error: ${String(lastError)}`);
   }, [lastError]);
 
-  /* ── Missing dates toast ── */
+  // Missing dates toast with Speak/Mute
   useEffect(() => {
-    if (!isManager||typeof managerMissingCount!=="number"||managerMissingCount<=0) return;
+    if (!isManager || typeof managerMissingCount !== "number" || managerMissingCount <= 0) return;
     if (sessionStorage.getItem("branchMissingDatesToast")) return;
+    triggerMissingToast();
+    sessionStorage.setItem("branchMissingDatesToast", "1");
+  }, [isManager, managerMissingCount, managerLatestWorkDate, managerMissingDates, triggerMissingToast]);
+
+  const getMissingToastText = () => {
     let text = `Attention.\n${managerMissingCount} days of reports are missing for your assigned branches.\n`;
     text += `The latest report received was on ${formatFormalDate(managerLatestWorkDate)}.\n`;
     Object.entries(managerMissingDates).forEach(([branch, dates]) => {
       text += `\nBranch: ${branch}.\n`;
       if (dates.length > 0) {
         text += "Missing report dates are:\n";
-        dates.forEach((d,i) => { text += i===dates.length-1&&dates.length>1?`and ${formatFormalDate(d)}.`:`${formatFormalDate(d)},\n`; });
-      } else { text += "No missing dates."; }
+        dates.forEach((d, i) => {
+          text += i === dates.length - 1 && dates.length > 1 ? `and ${formatFormalDate(d)}.` : `${formatFormalDate(d)},\n`;
+        });
+      } else {
+        text += "No missing dates.";
+      }
     });
-    text += "\n\nPlease upload the missing daily reports.\nGo to Send Daily Report to upload them now.";
-    toast({
-      title:"Branch Missing Dates",
-      description:(
-        <div>
-          <div style={{ whiteSpace:"pre-line", marginBottom:8 }}>{text}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <button type="button"
-              style={{ padding:"4px 10px", borderRadius:4, background:"#e2f539", color:"#1a1a1a", border:"none", cursor:"pointer", fontWeight:600 }}
-              onClick={() => { if (window.speechSynthesis) { window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text.replace(/\n/g," ")); u.lang="en-US"; window.speechSynthesis.speak(u); } }}>
-              Speak
-            </button>
-            <button type="button"
-              style={{ padding:"4px 10px", borderRadius:4, background:soundEnabled?"#4db6e8":"#555", color:"#fff", border:"none", cursor:"pointer" }}
-              onClick={() => setSoundEnabled(v => { if (v&&window.speechSynthesis) window.speechSynthesis.cancel(); return !v; })}>
-              {soundEnabled?"Mute":"Unmute"}
-            </button>
-          </div>
-        </div>
-      ),
-      variant:"destructive", duration:Infinity,
-    });
-    sessionStorage.setItem("branchMissingDatesToast","1");
-  }, [isManager, managerMissingCount, managerLatestWorkDate, managerMissingDates, soundEnabled]);
+    text += "\n\nPlease upload the missing daily reports.\n Send Daily Report Now .";
+    return text;
+  };
+
+  const handleSpeak = () => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const utter = new window.SpeechSynthesisUtterance(getMissingToastText().replace(/\n/g, " "));
+      utter.lang = "en-US";
+      speechUtteranceRef.current = utter;
+      window.speechSynthesis.speak(utter);
+    }
+  };
+
+  const handleMute = () => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      speechUtteranceRef.current = null;
+    }
+  };
 
   /* ── Derived ── */
   const today = new Date().toLocaleDateString("en-US",{ weekday:"short", month:"short", day:"numeric", year:"numeric" });
@@ -534,12 +573,46 @@ function DashboardContent() {
   const trendLast    = topTrend.at(-1)?.amount ?? 0;
   const trendPrev    = topTrend.length > 1 ? topTrend[topTrend.length-2].amount : trendLast;
   const trendDelta   = trendLast - trendPrev;
-  const trendPct     = trendPrev > 0 ? (trendDelta/trendPrev)*100 : 0;
+  let trendPct = trendPrev > 0 ? (trendDelta / trendPrev) * 100 : 0;
+  if (trendPct > 100) trendPct = 100;
   const trendTone    = trendDelta > 0 ? "Up" : trendDelta < 0 ? "Down" : "Flat";
   const trendSummary = trendDelta > 0 ? "Higher than previous day" : trendDelta < 0 ? "Lower than previous day" : "Same as previous day";
 
   return (
     <div className={styles.dashRoot} data-theme={theme}>
+      {/* Missing Dates Toast UI (restored to original position, with close button at top right) */}
+      {showMissingToast && isManager && typeof managerMissingCount === "number" && managerMissingCount > 0 && (
+        <div style={{
+          position: "fixed", right: 32, bottom: 32, zIndex: 9999, display: "flex", justifyContent: "flex-end", minWidth: 320, maxWidth: 480
+        }}>
+          <div style={{
+            background: "#fffbe9", color: "#b91c1c", border: "1.5px solid #f3d9b1", borderRadius: 8,
+            boxShadow: "0 2px 16px rgba(0,0,0,0.10)", padding: 20, width: "100%", fontFamily: "inherit", position: "relative"
+          }}>
+            {/* Close (X) button at top right */}
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={hideMissingToast}
+              style={{
+                position: "absolute", top: 8, right: 8, background: "transparent", border: 0, color: "#b91c1c", fontSize: 20, fontWeight: 700, cursor: "pointer", lineHeight: 1
+              }}
+            >
+              ×
+            </button>
+            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Missing Reports Alert</div>
+            <div style={{ whiteSpace: "pre-line", fontSize: 15, marginBottom: 12 }}>{getMissingToastText()}</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" style={{ background: "#32a7de", color: "#fff", border: 0, borderRadius: 4, padding: "6px 16px", fontWeight: 600, cursor: "pointer" }} onClick={handleSpeak}>
+                Speak
+              </button>
+              <button type="button" style={{ background: "#b91c1c", color: "#fff", border: 0, borderRadius: 4, padding: "6px 16px", fontWeight: 600, cursor: "pointer" }} onClick={handleMute}>
+                Mute
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className={styles.dashShell}>
         <div className={styles.dashInner}>
 
@@ -769,7 +842,6 @@ export default function DashboardPage() {
   return (
     <LoginLayout>
       <DashboardContent />
-      <Toaster />
     </LoginLayout>
   );
 }

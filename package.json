@@ -57,6 +57,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
     "sileo": "^0.1.5",
+    "socket.io-client": "^4.8.3",
     "sonner": "^1.7.1",
     "sweetalert2": "^11.26.23",
     "sweetalert2-react-content": "^5.1.2",

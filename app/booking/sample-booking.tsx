@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { FaUser, FaEnvelope, FaPhone, FaUsers, FaStickyNote, FaStore } from 'react-icons/fa';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -102,8 +103,10 @@ const SampleBookingForm = ({ preselectedBranchId = '' }: { preselectedBranchId?:
       });
       if (!res.ok) throw new Error('Booking failed');
       setSubmitted(true);
+      toast.success('Booking submitted!');
     } catch (err) {
       setError('Booking failed. Please try again.');
+      toast.error('Booking failed. Please try again.');
     }
   };
 

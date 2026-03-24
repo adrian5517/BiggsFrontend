@@ -1,5 +1,5 @@
 // Client-side auth utilities: token storage and authenticated fetch with refresh
-const BASE_API = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+const BASE_API = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000' 
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === '1'
 // In-memory debounce to avoid emitting many logout events and causing rapid
 // navigation loops when multiple requests fail concurrently.

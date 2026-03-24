@@ -4,8 +4,11 @@ import Link from 'next/link'
 // ThemeProvider removed to avoid server/client theme class mismatches
 import { Kanit } from 'next/font/google'
 
+
 import './globals.css'
 import ClientShell from '@/components/client-shell'
+import ToasterProvider from './toaster-provider'
+import { MissingToastProvider } from './context/MissingToastContext'
 
 const kanit = Kanit({
   subsets: ['latin'],
@@ -37,9 +40,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/images/logo.png" />
       </head>
       <body className={`${kanit.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
+        <ToasterProvider />
+        <MissingToastProvider>
           <ClientShell>
             {children}
           </ClientShell>
+        </MissingToastProvider>
       </body>
     </html>
   )

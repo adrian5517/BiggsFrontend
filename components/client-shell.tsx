@@ -227,6 +227,10 @@ export default function ClientShell({ children }: { children: React.ReactNode })
 
     {/* RIGHT SIDE */}
     <div className="flex items-center gap-3">
+      {/* Notification bell before profile menu */}
+      <React.Suspense fallback={null}>
+        {typeof window !== 'undefined' && require('./notification-bell').default ? React.createElement(require('./notification-bell').default) : null}
+      </React.Suspense>
       <ProfileMenu />
     </div>
 
