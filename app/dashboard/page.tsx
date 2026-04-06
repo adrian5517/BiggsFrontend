@@ -648,10 +648,10 @@ function DashboardContent() {
                 icon={<Ico.Activity />} accentClass="statCardAccentSky" iconClass="statIconSky"
                 trend="up" trendLabel="Live" loading={loading}
                 onClick={() => router.push("/admin/fetch-logs?status=queued,running")} />
-              <StatCard label="Bookings" value={stats?.uploads} sub="CSV bookings processed"
+              <StatCard label="Uploads" value={stats?.uploads} sub="CSV Uploads processed"
                 icon={<Ico.Upload />} accentClass="statCardAccentGold" iconClass="statIconGold"
                 trend="flat" trendLabel="Today" loading={loading}
-                onClick={() => router.push("/booking")} />
+                onClick={() => router.push("/uploads")} />
               <StatCard label="Files" value={stats?.files} sub="Files ingested & indexed"
                 icon={<Ico.Files />} accentClass="statCardAccentRed" iconClass="statIconRed"
                 loading={loading} onClick={() => router.push("/files")} />

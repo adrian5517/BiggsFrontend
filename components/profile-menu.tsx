@@ -36,8 +36,8 @@ export default function ProfileMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-40 bg-white text-slate-900 rounded-md shadow-lg py-1 z-20">
-          <a href="/profile" className="block px-4 py-2 text-sm hover:bg-slate-100">Profile</a>
+        <div className="absolute right-0 mt-2 w-40 bg-white text-sky-500 rounded-md shadow-lg py-1 z-20">
+          <a href="/users" className="block px-4 py-2 text-sm hover:bg-slate-100">Profile</a>
           <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-100">Logout</button>
         </div>
       )}

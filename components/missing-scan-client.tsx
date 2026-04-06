@@ -477,7 +477,7 @@ const css = `
 .msc-result-body {
   background: var(--surface-2);
   max-height: 600px;
-  overflow: auto;
+  overflow: hidden;
   padding: 14px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-md) transparent;
@@ -874,7 +874,8 @@ export default function MissingScanClient() {
       setCurrentPage(1);
       setMessages(m => [...m, `Scan complete: ${json?.results?.length || 0} rows generated`]);
       setMessages(m => [...m, `Date range: ${json?.start || 'N/A'} to ${json?.end || 'N/A'}`]);
-      if (json?.failureReason) {
+      if (json?.failureReason)
+        {
         setMessages(m => [...m, `Failure reason: ${json.failureReason}`]);
       }
       if (Array.isArray(json?.warnings) && json.warnings.length) {
@@ -1323,8 +1324,8 @@ export default function MissingScanClient() {
                               <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Pos</th>
                               <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing</th>
                               <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Missing Dates</th>
-                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Failure Reason</th>
-                              <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Actions</th>
+                              <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Failure Reason</th>
+                              {/* <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Actions</th> */}
                             </tr>
                           </thead>
                           <tbody>
@@ -1362,7 +1363,7 @@ export default function MissingScanClient() {
                                     const breakdown = getFailureBreakdown(r);
                                     if (!breakdown.length) return <span>{statusDetailUnavailableReason || getFailureReason(r)}</span>;
                                     return (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontFamily: 'var(--font-poppins)',fontWeight: 700, fontSize: '12px', textAlign:'center' }}>
                                         {breakdown.map(([label, value]) => (
                                           <span key={`${label}-${value}`}>{label}: {value}</span>
                                         ))}
@@ -1370,7 +1371,7 @@ export default function MissingScanClient() {
                                     );
                                   })()}
                                 </td>
-                                <td style={{ padding: '8px 6px', minWidth: '320px' }}>
+                                {/* <td style={{ padding: '8px 0px', minWidth: '320px' }}>
                                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     <button
                                       className="msc-btn msc-btn-sky"
@@ -1380,69 +1381,9 @@ export default function MissingScanClient() {
                                     >
                                       Queue Fetch
                                     </button>
-                                    {/* Edit controls for status */}
-                                    <input
-                                      type="text"
-                                      placeholder="Title"
-                                      value={r._editTitle || ''}
-                                      onChange={e => {
-                                        r._editTitle = e.target.value;
-                                        setScanResult({ ...scanResult });
-                                      }}
-                                      style={{ width: 70, fontSize: 10, padding: '2px 4px' }}
-                                    />
-                                    <select
-                                      value={r._editColor || ''}
-                                      onChange={e => {
-                                        r._editColor = e.target.value;
-                                        setScanResult({ ...scanResult });
-                                      }}
-                                      style={{ fontSize: 10, padding: '2px 4px' }}
-                                    >
-                                      <option value="">Color</option>
-                                      <option value="red">Red</option>
-                                      <option value="yellow">Yellow</option>
-                                      <option value="green">Green</option>
-                                      <option value="blue">Blue</option>
-                                    </select>
-                                    <input
-                                      type="text"
-                                      placeholder="Remarks"
-                                      value={r._editRemarks || ''}
-                                      onChange={e => {
-                                        r._editRemarks = e.target.value;
-                                        setScanResult({ ...scanResult });
-                                      }}
-                                      style={{ width: 90, fontSize: 10, padding: '2px 4px' }}
-                                    />
-                                    <button
-                                      className="msc-btn msc-btn-primary"
-                                      style={{ padding: '4px 8px', fontSize: '10px' }}
-                                      onClick={async () => {
-                                        const payload = {
-                                          branch: r.branch,
-                                          pos: r.pos,
-                                          title: r._editTitle || '',
-                                          color: r._editColor || '',
-                                          remarks: r._editRemarks || '',
-                                        };
-                                        try {
-                                          const resp = await fetch('https://biggsph.com/biggsinc_loyalty/controller/update_status.php', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify(payload),
-                                          });
-                                          if (!resp.ok) throw new Error('Failed to update status');
-                                          toast.success('Status updated!');
-                                        } catch (e) {
-                                          toast.error('Failed to update status');
-                                        }
-                                      }}
-                                    >
-                                      Save
-                                    </button>
+                                    
                                   </div>
-                                </td>
+                                </td> */}
                               </tr>
                             )})}
                           </tbody>

@@ -467,14 +467,14 @@ export default function SettingsPage() {
   return (
     <LoginLayout>
       <div className="max-w-7xl mx-auto py-8 px-4 space-y-4">
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 text-white rounded-xl p-6 shadow-lg">
+        <div className="bg-gradient-to-r from-sky-500 via-sky-400 to-sky-300 text-white rounded-xl p-6 shadow-lg">
           <h1 className="text-2xl font-bold">Settings</h1>
           <p className="text-sm text-slate-200 mt-1">Centralized operations, retention, jobs, sync, security, and UI preferences.</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/admin/fetch-logs" className="px-3 py-2 bg-white/15 hover:bg-white/25 rounded-lg text-sm">Fetch Reports</Link>
-            <Link href="/jobs" className="px-3 py-2 bg-white/15 hover:bg-white/25 rounded-lg text-sm">Jobs</Link>
-            <Link href="/master" className="px-3 py-2 bg-white/15 hover:bg-white/25 rounded-lg text-sm">Master</Link>
-            <Link href="/combine" className="px-3 py-2 bg-white/15 hover:bg-white/25 rounded-lg text-sm">Combine</Link>
+            <Link href="/admin/fetch-logs" className="px-3 py-2 bg-yellow-500 hover:bg-yellow-400/10 rounded-lg text-sm">Fetch Reports</Link>
+            <Link href="/jobs" className="px-3 py-2 bg-red-500 hover:bg-red-400/10 rounded-lg text-sm">Jobs</Link>
+            <Link href="/master" className="px-3 py-2 bg-green-500 hover:bg-green-400/10 rounded-lg text-sm">Master</Link>
+            <Link href="/combine" className="px-3 py-2 bg-orange-500 hover:bg-orange-400/10 rounded-lg text-sm">Combine</Link>
           </div>
         </div>
 

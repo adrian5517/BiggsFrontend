@@ -1,5 +1,11 @@
 # BiggsFrontend — local notes
 
+## Documentation
+
+- [Frontend Full Documentation](FRONTEND_DOCUMENTATION.md)
+- [Backend API Reference](../docs/API_DOCUMENTATION.md)
+- [Backend Architecture](../docs/BACKEND_ARCHITECTURE.md)
+
 POS fallback config
 - `POS_LIST_FALLBACK_FILES`: JSON array of fallback filenames or full URLs used when the remote POS list is empty or unavailable.
 - `POS_FILE_URL_TEMPLATE`: template used to construct full download URLs from filenames. Use `{filename}` as the placeholder.

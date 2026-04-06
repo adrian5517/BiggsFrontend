@@ -353,7 +353,7 @@ export default function UsersPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-900 to-slate-700 text-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-sky-700 bg-gradient-to-r from-sky-500 to-sky-600 text-white p-5 shadow-sm">
         <h1 className="text-2xl font-bold">My Profile</h1>
         <p className="text-slate-200 text-sm mt-1">Manage your account details and review your access metadata.</p>
       </div>
@@ -458,7 +458,7 @@ export default function UsersPage() {
               type="button"
               onClick={() => void handleSaveProfile()}
               disabled={loading || saving}
-              className="h-10 px-4 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-sm disabled:opacity-60"
+              className="h-10 px-4 rounded-lg bg-sky-500 text-white hover:bg-sky-600 text-sm disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
