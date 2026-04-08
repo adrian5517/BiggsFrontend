@@ -143,7 +143,7 @@ function PreviewModal({
         </div>
 
         {/* Best-selling products section */}
-        <div className="px-4 py-3 border-b bg-yellow-50">
+        {/* <div className="px-4 py-3 border-b bg-yellow-50">
           <div className="text-sm font-semibold text-yellow-700 mb-2">Best-Selling Products (This File)</div>
           {topProducts.length > 0 ? (
             <table className="min-w-full table-auto text-sm mb-2">
@@ -167,7 +167,7 @@ function PreviewModal({
           ) : (
             <div className="text-xs text-yellow-700">No sales data found in this file.</div>
           )}
-        </div>
+        </div> */}
 
         <div className="overflow-auto" style={{ maxHeight: '60vh' }}>
           {!!headers.length ? (

@@ -605,6 +605,7 @@ export default function FetchLogsClient() {
     setPage(1)
     load({ status: statusFromQuery, page: 1 })
   }, [searchParams])
+  
 
   async function loadBranches() {
     try {
