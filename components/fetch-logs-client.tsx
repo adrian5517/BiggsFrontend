@@ -607,6 +607,7 @@ export default function FetchLogsClient() {
   }, [searchParams])
   
 
+
   async function loadBranches() {
     try {
       const res = await auth.fetchWithAuth(`${API_BASE}/api/fetch/branches`)
